@@ -1,0 +1,110 @@
+#!/bin/bash
+
+##==============================================================================
+##
+## Resolve the top-level directory
+##
+##==============================================================================
+
+top=$(dirname $(realpath $(dirname $0)))
+
+if [ ! -f "${top}/scripts/myst-alpine" ]; then
+    echo "$0: misconfigured: myst-alpine scripts directory"
+    exit 1
+fi
+
+##==============================================================================
+##
+## Locate proot command
+##
+##==============================================================================
+
+proot=$(which proot)
+
+if [ ! -x "${proot}" ]; then
+    echo "$0: please install proot (sudo apt install -y proot)"
+    exit 1
+fi
+
+##==============================================================================
+##
+## Download the Alpine mini-rootfs the first time
+##
+##==============================================================================
+
+root=${top}/build/alpine
+name=alpine-minirootfs-3.12.0-x86_64
+url=https://nl.alpinelinux.org/alpine/v3.12/releases/x86_64/${name}.tar.gz
+
+if [ ! -f "${root}/etc/alpine-release" ]; then
+
+    mkdir -p ${root}
+    if [ "$?" != 0 ]; then
+        echo "$0: cannot create ${root} directory"
+        exit 1
+    fi
+    cd ${root}
+
+    wget ${url}
+    if [ "$?" != 0 ]; then
+        echo "$0: wget failed: ${url}"
+        exit 1
+    fi
+
+    tar zxvf ${name}.tar.gz
+    if [ "$?" != 0 ]; then
+        echo "$0: untar failed: ${name}.tar.gz"
+        exit 1
+    fi
+
+    rm -rf ${name}.tar.gz
+fi
+
+##==============================================================================
+##
+## Install build tools:
+##
+##==============================================================================
+
+etc_hosts="${top}/alpine/proot/etc_hosts"
+
+if [ ! -f "${top}/alpine/proot/etc_hosts" ]; then
+    echo "$0: missing file: ${etc_hosts}"
+    exit 1
+fi
+
+opts="-b ${etc_hosts}:/etc/hosts -b /dev -b /proc -r ${root} -w /"
+
+if [ ! -x "${root}/usr/bin/gcc" ]; then
+
+    proot ${opts} -0 apk update
+    if [ "$?" != "0" ]; then
+        echo "$0: apk update failed"
+        exit 1
+    fi
+
+    proot ${opts} -0 apk add build-base
+    if [ "$?" != "0" ]; then
+        echo "$0: apk add build-base failed"
+        exit 1
+    fi
+
+    proot ${opts} -0 apk add bash
+    if [ "$?" != "0" ]; then
+        echo "$0: apk add bash failed"
+        exit 1
+    fi
+
+fi
+
+##==============================================================================
+##
+## Execute the command:
+##
+##==============================================================================
+
+if [ ! -z "$*" ]; then
+    proot ${opts} $*
+fi
+
+
