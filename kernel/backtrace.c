@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+/* reference code: https://github.com/cyang49/continuation/blob/master/test.c */
+
 #include <elf.h>
 #include <errno.h>
 #include <stdlib.h>
