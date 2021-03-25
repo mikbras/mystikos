@@ -17,7 +17,7 @@ int gettid()
     return syscall(SYS_gettid);
 }
 
-#define DEFAULT_STACK_SIZE (256 * 1024)
+#define DEFAULT_STACK_SIZE (4 * 1024 * 1024)
 #define STACK_EXTRA 1024
 
 static int _valid_stack_address(const void* sp, const void* p)
@@ -28,26 +28,6 @@ static int _valid_stack_address(const void* sp, const void* p)
         return 1;
 
     return 0;
-}
-
-static size_t _memsize(const void* ptr)
-{
-    const uint8_t* p = ptr;
-    size_t size = 0;
-    const size_t pgsz = 4096;
-    int r;
-
-    p = (void*)(((uint64_t)p + pgsz - 1) / pgsz * pgsz);
-
-    while ((r = msync((void*)p, pgsz, MS_SYNC)) == 0)
-    {
-        p += pgsz;
-        size += pgsz;
-    }
-
-    printf("r=%d errno=%d\n", r, errno);
-
-    return size;
 }
 
 size_t _find_base_pointer_offsets(
@@ -68,7 +48,7 @@ size_t _find_base_pointer_offsets(
     return n;
 }
 
-int _make_child_stack(
+static int _create_child_stack(
     const void* parent_sp,
     const void* parent_bp,
     void** child_stack_out,
@@ -76,18 +56,14 @@ int _make_child_stack(
     void** child_bp_out)
 {
     int ret = 0;
-    const size_t NOFFSETS = 256;
+    const size_t NOFFSETS = 2;
     size_t offsets[NOFFSETS];
-    size_t noffsets;
-    size_t stack_base_size;
-    size_t stack_size;
+    size_t n;
+    size_t parent_stack_depth;
     size_t bp_offset;
     uint8_t* child_stack = NULL;
     uint8_t* child_sp = NULL;
     uint8_t* child_bp = NULL;
-
-    size_t memsize = _memsize(parent_sp);
-    printf("memsize=%zu\n", memsize);
 
     if (child_sp_out)
         *child_sp_out = NULL;
@@ -95,21 +71,25 @@ int _make_child_stack(
     if (child_bp_out)
         *child_bp_out = NULL;
 
-    /* find the offsets to all the base pointers in the parent stack */
-    noffsets = _find_base_pointer_offsets(
-        (const void*)parent_sp, (const void*)parent_bp, offsets, NOFFSETS);
+    /* find offsets to next two levels of base pointers in the parent stack */
+    n = _find_base_pointer_offsets(parent_sp, parent_bp, offsets, NOFFSETS);
+
+    if (n != NOFFSETS)
+    {
+        ret = -ENOSYS;
+        goto done;
+    }
 
     /* compute the base offset of the base relative to the stack */
     bp_offset = parent_bp - parent_sp;
 
     /* compute the new stack base size */
-    stack_base_size = (noffsets > 0) ? offsets[noffsets - 1] : bp_offset;
+    parent_stack_depth = offsets[NOFFSETS - 1];
 
-    /* compute the stack size with some extra bytes for final frame */
-    /* ATTN */
-    stack_size = stack_base_size + STACK_EXTRA;
+    printf("parent_stack_depth=%zu\n", parent_stack_depth);
 
-#if 1
+#if 0
+    printf("parent_bp=%p\n", parent_bp);
     printf("noffsets=%zu\n", noffsets);
 
     for (size_t i = 0; i < noffsets; i++)
@@ -121,7 +101,9 @@ int _make_child_stack(
 
     /* allocate the child stack */
     {
-        if (!(child_stack = memalign(16, DEFAULT_STACK_SIZE)))
+        const size_t alignment = 16;
+
+        if (!(child_stack = memalign(alignment, DEFAULT_STACK_SIZE)))
         {
             ret = -ENOMEM;
             goto done;
@@ -130,9 +112,10 @@ int _make_child_stack(
         memset(child_stack, 0, DEFAULT_STACK_SIZE);
     }
 
-    /* copy parent stack to middle of child stack */
-    child_sp = child_stack + (DEFAULT_STACK_SIZE / 2);
-    memcpy(child_sp, parent_sp, stack_size);
+    /* copy parent stack to the end of the new child stack */
+    child_sp = child_stack + DEFAULT_STACK_SIZE - parent_stack_depth;
+    child_sp = (uint8_t*)((uint64_t)child_sp & 0xfffffffffffffff0);
+    memcpy(child_sp, parent_sp, parent_stack_depth);
 
     /* calculate the child base pointer */
     child_bp = child_sp + bp_offset;
@@ -141,7 +124,7 @@ int _make_child_stack(
     {
         ssize_t delta = (uint64_t)parent_sp - (int64_t)child_sp;
 
-        for (size_t i = 0; i < noffsets; i++)
+        for (size_t i = 0; i < n; i++)
         {
             uint64_t* addr = (uint64_t*)(((uint8_t*)child_sp + offsets[i]));
 
@@ -186,14 +169,13 @@ __attribute__((__noinline__)) int pseudo_fork(pthread_t* thread)
     {
         struct thread_args* args;
         void* stack = NULL;
+        const void* parent_sp = (const void*)env.rsp;
+        const void* parent_bp = (const void*)env.rbp;
         void* sp = NULL;
         void* bp = NULL;
 
-        if (_make_child_stack(
-                (void*)env.rsp, (void*)env.rbp, &stack, &sp, &bp) != 0)
-        {
+        if (_create_child_stack(parent_sp, parent_bp, &stack, &sp, &bp) != 0)
             return -ENOMEM;
-        }
 
         if (!(args = calloc(1, sizeof(struct thread_args))))
             return -ENOMEM;
@@ -221,7 +203,17 @@ __attribute__((__noinline__)) int pseudo_fork(pthread_t* thread)
 
 int main(int argc, const char* argv[])
 {
+#if 0
+    register void* bp asm("rbp");
+    printf("main.bp=%p\n", bp);
+#endif
     pthread_t thread;
+
+#if 1
+    char path[4096];
+    getcwd(path, sizeof(path));
+    printf("path{%s}\n", path);
+#endif
 
     int tid = pseudo_fork(&thread);
 
@@ -230,15 +222,15 @@ int main(int argc, const char* argv[])
         fprintf(stderr, "pseudo_fork() failed\n");
         exit(1);
     }
-    else if (tid > 0)
-    {
-        printf("parent: tid=%d\n", tid);
-        pthread_join(thread, NULL);
-    }
-    else
+    else if (tid == 0)
     {
         printf("child: tid=%d\n", tid);
         pthread_exit((void*)0);
+    }
+    else
+    {
+        printf("parent: tid=%d\n", tid);
+        pthread_join(thread, NULL);
     }
 
     return 0;
