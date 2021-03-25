@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <linux/futex.h>
 #include <malloc.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -12,13 +13,33 @@
 
 #include "jump.h"
 
+#define DEFAULT_STACK_SIZE (4 * 1024 * 1024)
+#define STACK_EXTRA 1024
+
 int gettid()
 {
     return syscall(SYS_gettid);
 }
 
-#define DEFAULT_STACK_SIZE (4 * 1024 * 1024)
-#define STACK_EXTRA 1024
+static void _wait(volatile int* addr, int val)
+{
+    int spins = 100;
+
+    while (spins-- && *addr == val)
+        __asm__ __volatile__("pause" : : : "memory");
+
+    while (*addr == val)
+    {
+        const int op = FUTEX_WAIT | FUTEX_WAIT_PRIVATE;
+        syscall(SYS_futex, addr, op, val, 0);
+    }
+}
+
+static void _wake(volatile void* addr)
+{
+    const int op = FUTEX_WAKE | FUTEX_WAKE_PRIVATE;
+    syscall(SYS_futex, addr, op, -1);
+}
 
 static int _valid_stack_address(const void* sp, const void* p)
 {
@@ -149,13 +170,35 @@ struct thread_args
     void* child_stack;
     void* child_sp;
     void* child_bp;
+    volatile int tid;
 };
+
+__attribute__((__unused__)) static void _thread_args_free(void* arg)
+{
+    printf("_thread_args_free(): tid=%d\n", gettid());
+    struct thread_args* args = (struct thread_args*)arg;
+    free(args->child_stack);
+    free(args);
+}
+
+static pthread_key_t _atexit_key;
+
+static pthread_once_t _once = PTHREAD_ONCE_INIT;
+
+static void _once_func(void)
+{
+    pthread_key_create(&_atexit_key, _thread_args_free);
+}
 
 static void* _thread_func(void* arg)
 {
     struct thread_args* args = (struct thread_args*)arg;
     args->env.rsp = (uint64_t)args->child_sp;
     args->env.rbp = (uint64_t)args->child_bp;
+    pthread_once(&_once, _once_func);
+    pthread_setspecific(_atexit_key, args);
+    args->tid = gettid();
+    _wake(&args->tid);
     myst_longjmp(&args->env, 1);
     return NULL;
 }
@@ -186,17 +229,13 @@ __attribute__((__noinline__)) int pseudo_fork(pthread_t* thread)
         args->child_bp = bp;
 
         pthread_create(thread, NULL, _thread_func, args);
-        tid = gettid();
-        // printf("pseudo_fork.parent.tid=%d\n", gettid());
+        _wait(&args->tid, 0);
+        tid = args->tid;
     }
     else
     {
-        // printf("pseudo_fork.child.tid=%d\n", gettid());
         tid = 0;
     }
-
-    // printf("pseudo_fork.common.tid=%d tid=%d &tid=%p\n", gettid(), tid,
-    // &tid);
 
     return tid;
 }
@@ -209,12 +248,6 @@ int main(int argc, const char* argv[])
 #endif
     pthread_t thread;
 
-#if 1
-    char path[4096];
-    getcwd(path, sizeof(path));
-    printf("path{%s}\n", path);
-#endif
-
     int tid = pseudo_fork(&thread);
 
     if (tid < 0)
@@ -224,12 +257,12 @@ int main(int argc, const char* argv[])
     }
     else if (tid == 0)
     {
-        printf("child: tid=%d\n", tid);
+        printf("child: tid=%d gettid()=%d\n", tid, gettid());
         pthread_exit((void*)0);
     }
     else
     {
-        printf("parent: tid=%d\n", tid);
+        printf("parent: tid=%d gettid()=%d\n", tid, gettid());
         pthread_join(thread, NULL);
     }
 
