@@ -62,6 +62,7 @@
 #include <myst/process.h>
 #include <myst/pubkey.h>
 #include <myst/ramfs.h>
+#include <myst/round.h>
 #include <myst/setjmp.h>
 #include <myst/signal.h>
 #include <myst/spinlock.h>
@@ -2280,6 +2281,37 @@ done:
     return ret;
 }
 
+long myst_syscall_mincore(void* addr, size_t length, unsigned char* vec)
+{
+    long ret = 0;
+    uint64_t end_addr;
+
+    if (!addr || !vec)
+        ERAISE(-EINVAL);
+
+    /* address must be a multiple of the page size */
+    if (((uint64_t)addr) % PAGE_SIZE)
+        ERAISE(-EINVAL);
+
+    /* round length to the next page size multiple */
+    if (myst_round_up(length, PAGE_SIZE, &length) != 0)
+        ERAISE(-EINVAL);
+
+    /* if addr + length overflows */
+    if (__builtin_add_overflow((uint64_t)addr, length, &end_addr))
+        ERAISE(-ENOMEM);
+
+    /* if ending address it too big */
+    if ((int64_t)end_addr < 0)
+        ERAISE(-ENOMEM);
+
+    /* report that all pages are resident */
+    memset(vec, 0x01, length / PAGE_SIZE);
+
+done:
+    return ret;
+}
+
 long myst_syscall_ret(long ret)
 {
     if (ret < 0)
@@ -2827,10 +2859,12 @@ long myst_syscall(long n, long params[6])
             }
             else
             {
+#if 0
                 pid_t pid = myst_getpid();
 
                 if (myst_register_process_mapping(pid, ptr, length) != 0)
                     myst_panic("failed to register process mapping");
+#endif
 
                 ret = (long)ptr;
             }
@@ -3045,8 +3079,15 @@ long myst_syscall(long n, long params[6])
             BREAK(_return(n, myst_msync(addr, length, flags)));
         }
         case SYS_mincore:
-            /* ATTN: hook up implementation */
-            break;
+        {
+            void* addr = (void*)x1;
+            size_t length = (size_t)x2;
+            unsigned char* vec = (unsigned char*)x3;
+
+            _strace(n, "addr=%p length=%zu vec=%p", addr, length, vec);
+
+            BREAK(_return(n, myst_syscall_mincore(addr, length, vec)));
+        }
         case SYS_madvise:
         {
             void* addr = (void*)x1;

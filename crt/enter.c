@@ -17,6 +17,7 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include <myst/defs.h>
 #include <myst/gcov.h>
 #include <myst/libc.h>
 #include <myst/syscall.h>
@@ -194,4 +195,46 @@ static void _create_itimer_thread(void)
         fprintf(stderr, "%s(): pthread_create() failed\n", func);
         abort();
     }
+}
+
+typedef int ucontext_t;
+
+void makecontext(ucontext_t* ucp, void (*func)(), int argc, ...)
+{
+    printf("oops: %d\n", __LINE__);
+}
+
+int swapcontext(ucontext_t* oucp, const ucontext_t* ucp)
+{
+    printf("oops: %d\n", __LINE__);
+    return 0;
+}
+
+void setcontext()
+{
+    printf("oops: %d\n", __LINE__);
+}
+
+#pragma GCC diagnostic ignored "-Wbuiltin-declaration-mismatch"
+
+void __atomic_compare_exchange_16()
+{
+    printf("oops: %d\n", __LINE__);
+}
+
+static void _atomic_store_16()
+{
+    printf("oops: %d\n", __LINE__);
+}
+
+MYST_WEAK_ALIAS(_atomic_store_16, __atomic_store_16);
+
+void __atomic_load_16()
+{
+    printf("oops: %d\n", __LINE__);
+}
+
+void __atomic_exchange_16()
+{
+    printf("oops: %d\n", __LINE__);
 }
