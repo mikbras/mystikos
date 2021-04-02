@@ -9,7 +9,11 @@ INCLUDES = -I$(INCDIR) -I$(TOP)/build/musl/include
 
 DEFINES = $(MYST_DEFINES)
 
-SOURCES = $(wildcard *.c) $(wildcard $(TOP)/third_party/gcompat/gcompat/libgcompat/*.c)
+SOURCES =
+SOURCES += $(wildcard *.c)
+SOURCES += $(wildcard $(TOP)/third_party/gcompat/gcompat/libgcompat/*.c)
+SOURCES += $(wildcard ../kernel/setjmp.s)
+SOURCES += $(wildcard ../kernel/longjmp.s)
 
 ifdef MYST_ENABLE_GCOV
 CFLAGS += -fprofile-arcs -ftest-coverage
@@ -32,13 +36,20 @@ MUSLSRC=$(TOP)/third_party/musl/crt/musl
 
 -include $(MUSLSRC)/objects.mak
 
-OBJECTS = $(addprefix $(SUBOBJDIR)/,$(SOURCES:.c=.o))
+__OBJECTS1 = $(SOURCES:.c=.o)
+__OBJECTS2 = $(__OBJECTS1:.s=.o)
+OBJECTS = $(addprefix $(SUBOBJDIR)/,$(__OBJECTS2))
 
 $(TARGET): $(MUSL_OBJECTS) $(OBJECTS)
 	mkdir -p $(LIBDIR)
 	$(CC) -o $@ $(LDFLAGS1) $(OBJECTS) $(MUSL_OBJECTS) $(LIBCC) $(LDFLAGS2)
 
 $(SUBOBJDIR)/%.o: %.c
+	mkdir -p $(SUBOBJDIR)
+	$(shell mkdir -p $(shell dirname $@))
+	$(CC) -c $(CFLAGS) $(DEFINES) $(INCLUDES) -o $@ $<
+
+$(SUBOBJDIR)/%.o: %.s
 	mkdir -p $(SUBOBJDIR)
 	$(shell mkdir -p $(shell dirname $@))
 	$(CC) -c $(CFLAGS) $(DEFINES) $(INCLUDES) -o $@ $<
