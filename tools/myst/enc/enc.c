@@ -223,6 +223,8 @@ struct enter_arg
 {
     struct myst_options* options;
     struct myst_shm* shared_memory;
+    const void* host_regions_data;
+    size_t host_regions_size;
     const void* argv_data;
     size_t argv_size;
     const void* envp_data;
@@ -256,6 +258,8 @@ static long _enter(void* arg_)
     size_t enclave_size;
     const Elf64_Ehdr* ehdr;
     const char target[] = "MYST_TARGET=sgx";
+    bool use_host_regions = false;
+    const void* regions = NULL;
 
     memset(&parsed_config, 0, sizeof(parsed_config));
 
@@ -264,6 +268,16 @@ static long _enter(void* arg_)
 
     memset(&args, 0, sizeof(args));
     memset(&env, 0, sizeof(env));
+
+    if (use_host_regions)
+    {
+        regions = (uint8_t*)arg->host_regions_data + arg->host_regions_size;
+    }
+    else
+    {
+        extern const void* __oe_get_heap_base(void);
+        regions = __oe_get_heap_base();
+    }
 
     /* Get the enclave base address */
     if (!(enclave_base = __oe_get_enclave_base()))
@@ -278,8 +292,6 @@ static long _enter(void* arg_)
     /* Get the config region */
     {
         myst_region_t r;
-        extern const void* __oe_get_heap_base(void);
-        const void* regions = __oe_get_heap_base();
 
         if (myst_region_find(regions, MYST_REGION_CONFIG, &r) == 0)
         {
@@ -420,8 +432,7 @@ static long _enter(void* arg_)
     {
         myst_kernel_args_t kargs;
         myst_kernel_entry_t entry;
-        extern const void* __oe_get_heap_base(void);
-        const void* regions_end = __oe_get_heap_base();
+
         const bool tee_debug_mode = _test_oe_debug_mode() == 0;
         char err[256];
 
@@ -434,7 +445,7 @@ static long _enter(void* arg_)
             env.data,
             cwd,
             hostname,
-            regions_end,
+            regions,
             enclave_base,   /* image_data */
             enclave_size,   /* image_size */
             _get_num_tcs(), /* max threads */
@@ -474,6 +485,10 @@ static long _enter(void* arg_)
             assert(0);
         }
 
+        printf(
+            "HOST_REGIONS=%p\n",
+            (uint8_t*)arg->host_regions_data + arg->host_regions_size);
+        printf("KARGS=%p\n", &kargs);
         ret = (*entry)(&kargs);
     }
 
@@ -495,6 +510,8 @@ done:
 int myst_enter_ecall(
     struct myst_options* options,
     struct myst_shm* shared_memory,
+    void* host_regions_data,
+    size_t host_regions_size,
     const void* argv_data,
     size_t argv_size,
     const void* envp_data,
@@ -504,6 +521,8 @@ int myst_enter_ecall(
     struct enter_arg arg = {
         .options = options,
         .shared_memory = shared_memory,
+        .host_regions_data = host_regions_data,
+        .host_regions_size = host_regions_size,
         .argv_data = argv_data,
         .argv_size = argv_size,
         .envp_data = envp_data,

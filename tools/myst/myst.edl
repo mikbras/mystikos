@@ -73,6 +73,8 @@ enclave
         public int myst_enter_ecall(
             [in] struct myst_options* options,
             [in] struct myst_shm* shared_memory,
+            [user_check] void* host_regions_data,
+            size_t host_regions_size,
             [in, size=args_size] const void* args,
             size_t args_size,
             [in, size=env_size] const void* env,

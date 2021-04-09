@@ -9,7 +9,11 @@
 void* __image_data;
 size_t __image_size;
 
-static int _add_page(void* arg, uint64_t vaddr, const void* page, int flags)
+__attribute__((__unused__)) static int _add_page(
+    void* arg,
+    uint64_t vaddr,
+    const void* page,
+    int flags)
 {
     uint64_t oe_flags = SGX_SECINFO_REG;
     bool extend = false;
