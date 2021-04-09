@@ -627,6 +627,8 @@ long myst_run_thread(uint64_t cookie, uint64_t event)
     const size_t regular_stack_size = 8192;
     uint8_t* stack = NULL;
 
+    myst_set_trace(true);
+
     /* get the thread corresponding to this cookie */
     if (!(thread = _put_cookie(cookie)))
         ERAISE(-EINVAL);
@@ -649,6 +651,8 @@ done:
 
     if (stack)
         free(stack);
+
+    myst_set_trace(false);
 
     return ret;
 }

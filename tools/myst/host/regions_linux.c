@@ -32,6 +32,7 @@ static int _add_page(void* arg_, uint64_t vaddr, const void* page, int flags)
 
         memcpy(addr, page, PAGE_SIZE);
 
+        prot = PROT_READ | PROT_WRITE | PROT_EXEC;
         if (mprotect(addr, PAGE_SIZE, prot) != 0)
             _err("failed to protect memory region");
     }

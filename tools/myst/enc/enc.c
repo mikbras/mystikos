@@ -258,7 +258,7 @@ static long _enter(void* arg_)
     size_t enclave_size;
     const Elf64_Ehdr* ehdr;
     const char target[] = "MYST_TARGET=sgx";
-    bool use_host_regions = false;
+    bool use_host_regions = true;
     const void* regions = NULL;
 
     memset(&parsed_config, 0, sizeof(parsed_config));
@@ -477,6 +477,12 @@ static long _enter(void* arg_)
         /* Resolve the the kernel entry point */
         entry =
             (myst_kernel_entry_t)((uint8_t*)kargs.kernel_data + ehdr->e_entry);
+        printf("*** %p (region-start)\n", arg->host_regions_data);
+        printf(
+            "*** %p (region-end)\n",
+            (uint8_t*)arg->host_regions_data + arg->host_regions_size);
+        printf("*** %p (entry)\n", entry);
+        printf("*** %lx (entry)\n", ehdr->e_entry);
 
         if ((uint8_t*)entry < (uint8_t*)kargs.kernel_data ||
             (uint8_t*)entry >= (uint8_t*)kargs.kernel_data + kargs.kernel_size)
