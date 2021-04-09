@@ -215,7 +215,7 @@ oelicense:
 ##==============================================================================
 
 ifndef OUTPUTDIR
-    OUTPUTDIR=$(CURDIR)/../mystikos.output
+    OUTPUTDIR=$(shell realpath $(CURDIR)/../mystikos.output)
 endif
 
 LOWERDIR=$(CURDIR)
@@ -224,12 +224,13 @@ WORKDIR=$(OUTPUTDIR)/.work
 MOUNTDIR=$(OUTPUTDIR)/mystikos
 
 mount:
-	mkdir -p $(OUTPUTDIR)
-	mkdir -p $(UPPERDIR)
-	mkdir -p $(WORKDIR)
-	mkdir -p $(MOUNTDIR)
-	sudo mount -t overlay $(CURDIR) \
+	@ mkdir -p $(OUTPUTDIR)
+	@ mkdir -p $(UPPERDIR)
+	@ mkdir -p $(WORKDIR)
+	@ mkdir -p $(MOUNTDIR)
+	@ sudo mount -t overlay $(CURDIR) \
             -o lowerdir=$(LOWERDIR),upperdir=$(UPPERDIR),workdir=$(WORKDIR) $(MOUNTDIR)
+	@ echo "mounted $(MOUNTDIR)"
 
 umount:
 	sudo umount $(MOUNTDIR)
