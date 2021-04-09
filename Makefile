@@ -210,6 +210,32 @@ oelicense:
 
 ##==============================================================================
 ##
+## overlay mount of output directory
+##
+##==============================================================================
+
+ifndef OUTPUTDIR
+    OUTPUTDIR=$(CURDIR)/../mystikos.output
+endif
+
+LOWERDIR=$(CURDIR)
+UPPERDIR=$(OUTPUTDIR)/.upper
+WORKDIR=$(OUTPUTDIR)/.work
+MOUNTDIR=$(OUTPUTDIR)/mystikos
+
+mount:
+	mkdir -p $(OUTPUTDIR)
+	mkdir -p $(UPPERDIR)
+	mkdir -p $(WORKDIR)
+	mkdir -p $(MOUNTDIR)
+	sudo mount -t overlay $(CURDIR) \
+            -o lowerdir=$(LOWERDIR),upperdir=$(UPPERDIR),workdir=$(WORKDIR) $(MOUNTDIR)
+
+umount:
+	sudo umount $(MOUNTDIR)
+
+##==============================================================================
+##
 ## help:
 ##
 ##==============================================================================
