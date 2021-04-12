@@ -223,6 +223,7 @@ struct enter_arg
 {
     struct myst_options* options;
     struct myst_shm* shared_memory;
+    void* host_regions;
     const void* argv_data;
     size_t argv_size;
     const void* envp_data;
@@ -454,6 +455,41 @@ static long _enter(void* arg_)
         kargs.shell_mode = shell_mode;
         kargs.memcheck = memcheck;
 
+        /* override the mman region with host mman region if debug */
+        if (tee_debug_mode && arg->host_regions)
+        {
+#if 0
+            {
+                const char name[] = MYST_REGION_MMAN;
+                myst_region_t region;
+
+                if (myst_region_find(arg->host_regions, name, &region) != 0)
+                {
+                    fprintf(stderr, "failed to find host region: %s\n", name);
+                    assert(0);
+                }
+
+                kargs.mman_data = region.data;
+                kargs.mman_size = region.size;
+            }
+#endif
+#if 1
+            {
+                const char name[] = MYST_REGION_ROOTFS;
+                myst_region_t region;
+
+                if (myst_region_find(arg->host_regions, name, &region) != 0)
+                {
+                    fprintf(stderr, "failed to find host region: %s\n", name);
+                    assert(0);
+                }
+
+                kargs.rootfs_data = region.data;
+                kargs.rootfs_size = region.size;
+            }
+#endif
+        }
+
         /* set ehdr and verify that the kernel is an ELF image */
         {
             ehdr = (const Elf64_Ehdr*)kargs.kernel_data;
@@ -498,6 +534,7 @@ done:
 int myst_enter_ecall(
     struct myst_options* options,
     struct myst_shm* shared_memory,
+    void* host_regions,
     const void* argv_data,
     size_t argv_size,
     const void* envp_data,
@@ -508,6 +545,7 @@ int myst_enter_ecall(
     struct enter_arg arg = {
         .options = options,
         .shared_memory = shared_memory,
+        .host_regions = host_regions,
         .argv_data = argv_data,
         .argv_size = argv_size,
         .envp_data = envp_data,

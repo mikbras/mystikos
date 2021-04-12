@@ -253,6 +253,8 @@ int exec_launch_enclave(
     char tmp[] = "/tmp/mystXXXXXX";
     char err[128];
     const size_t errsz = sizeof(err);
+    void* regions_data = NULL;
+    size_t regions_size = 0;
 
     /* if --max-threads given, then patch the enclave image */
     if (max_threads != 0)
@@ -294,12 +296,17 @@ int exec_launch_enclave(
     /* Get clock times right before entering the enclave */
     shm_create_clock(&shared_memory, CLOCK_TICK);
 
+    /* map the regions */
+    if (map_regions(&regions_data, &regions_size) != 0)
+        _err("failed to map regions");
+
     /* Enter the enclave and run the program */
     r = myst_enter_ecall(
         _enclave,
         &retval,
         options,
         &shared_memory,
+        (uint8_t*)regions_data + regions_size,
         argv_buf.data,
         argv_buf.size,
         envp_buf.data,
@@ -314,6 +321,9 @@ int exec_launch_enclave(
         _err("failed to terminate enclave: result=%s", oe_result_str(r));
 
     shm_free_clock(&shared_memory);
+
+    if (regions_data)
+        munmap(regions_data, regions_size);
 
     free(argv_buf.data);
     free(envp_buf.data);
