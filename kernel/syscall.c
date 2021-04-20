@@ -2570,8 +2570,17 @@ done:
         goto done;           \
     } while (0)
 
-long myst_syscall(long n, long params[6])
+typedef struct syscall_args
 {
+    long n;
+    long* params;
+} syscall_args_t;
+
+static long _syscall(void* args_)
+{
+    syscall_args_t* args = (syscall_args_t*)args_;
+    long n = args->n;
+    long* params = args->params;
     long syscall_ret = 0;
     long x1 = params[0];
     long x2 = params[1];
@@ -5113,6 +5122,25 @@ done:
     myst_signal_process(thread);
 
     return syscall_ret;
+}
+
+long myst_syscall(long n, long params[6])
+{
+    uint8_t* stack = (uint8_t*)__myst_kernel_args.kernel_stacks_data;
+    const size_t stack_size = MYST_KERNEL_STACK_SIZE;
+    syscall_args_t args = {.n = n, .params = params};
+
+    register uint8_t* old_sp asm("rsp");
+    register uint8_t* new_sp = stack + stack_size;
+    // myst_eprintf("OLD_SP=%p\n", old_sp);
+    // myst_eprintf("NEW_SP=%p\n", new_sp);
+
+    if (new_sp > old_sp)
+        myst_panic("new_sp > old_sp");
+
+    long ret = myst_call_on_stack2(stack + stack_size, _syscall, &args);
+
+    return ret;
 }
 
 /*

@@ -40,6 +40,8 @@
 
 static myst_kernel_args_t kargs;
 
+extern const void* __oe_get_heap_base(void);
+
 long _exception_handler_syscall(long n, long params[6])
 {
     return (*kargs.myst_syscall)(n, params);
@@ -279,7 +281,6 @@ static long _enter(void* arg_)
     /* Get the config region */
     {
         myst_region_t r;
-        extern const void* __oe_get_heap_base(void);
         const void* regions = __oe_get_heap_base();
 
         if (myst_region_find(regions, MYST_REGION_CONFIG, &r) == 0)
@@ -422,7 +423,6 @@ static long _enter(void* arg_)
     {
         myst_kernel_args_t kargs;
         myst_kernel_entry_t entry;
-        extern const void* __oe_get_heap_base(void);
         const void* regions_end = __oe_get_heap_base();
         const bool tee_debug_mode = _test_oe_debug_mode() == 0;
         char err[256];
@@ -493,9 +493,6 @@ done:
     return ret;
 }
 
-/* The size of the stack for entering the kernel */
-#define ENTER_STACK_SIZE (132 * 1024)
-
 int myst_enter_ecall(
     struct myst_options* options,
     struct myst_shm* shared_memory,
@@ -514,18 +511,25 @@ int myst_enter_ecall(
         .envp_size = envp_size,
         .event = event,
     };
-    MYST_ALIGN(16) static uint8_t _stack[ENTER_STACK_SIZE];
 
     /* prevent this function from being called more than once */
     if (__sync_fetch_and_add(&myst_enter_ecall_lock, 1) != 0)
     {
-        fprintf(stderr, "ERROR: myst_enter_ecall() can only be called once\n");
         myst_enter_ecall_lock = 1; // stop this from wrapping
         return -1;
     }
 
+    const void* regions = __oe_get_heap_base();
+    myst_region_t reg;
+
+    /* find the stack for entering the kernel */
+    if (myst_region_find(regions, MYST_REGION_KERNEL_ENTER_STACK, &reg) != 0)
+        return -1;
+
+    uint8_t* stack = (uint8_t*)reg.data + reg.size;
+
     /* avoid using the tiny TCS stack */
-    return (int)myst_call_on_stack(_stack + ENTER_STACK_SIZE, _enter, &arg);
+    return (int)myst_call_on_stack(stack, _enter, &arg);
 }
 
 long myst_run_thread_ecall(uint64_t cookie, uint64_t event)

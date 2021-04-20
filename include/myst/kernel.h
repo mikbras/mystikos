@@ -9,6 +9,12 @@
 #include <myst/tcall.h>
 #include <myst/types.h>
 
+#define MYST_NUM_KERNEL_STACKS 1024
+
+#define MYST_KERNEL_STACK_SIZE (64 * 1024)
+
+#define MYST_KERNEL_ENTER_STACK_SIZE (132 * 1024)
+
 typedef struct _myst_host_enc_id_mapping
 {
     uid_t host_uid;
@@ -22,6 +28,10 @@ typedef struct myst_kernel_args
     /* The image that contains the kernel and crt etc. */
     const void* image_data;
     size_t image_size;
+
+    /* the region that contains the kernel stacks */
+    const void* kernel_stacks_data;
+    size_t kernel_stacks_size;
 
     /* The loaded kernel ELF image (ELF header start here) */
     const void* kernel_data;
