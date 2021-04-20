@@ -54,6 +54,7 @@
 #include <myst/lsr.h>
 #include <myst/mmanutils.h>
 #include <myst/mount.h>
+#include <myst/once.h>
 #include <myst/options.h>
 #include <myst/panic.h>
 #include <myst/paths.h>
@@ -5124,11 +5125,51 @@ done:
     return syscall_ret;
 }
 
+typedef struct kstack
+{
+    uint8_t guard[PAGE_SIZE];
+    struct kstack* next;
+} kstack_t;
+
+static myst_spinlock_t _kstack_lock;
+static int _kstacks_initialized;
+static kstack_t* _kstacks;
+
+static void _init_kstacks(void)
+{
+    myst_spin_lock(&_kstack_lock);
+
+    if (_kstacks_initialized == 0)
+    {
+        uint8_t* p = (uint8_t*)__myst_kernel_args.kernel_stacks_data;
+
+        for (size_t i = 0; i < MYST_NUM_KERNEL_STACKS; i++)
+        {
+            kstack_t* kstack = (kstack_t*)p;
+            kstack->next = _kstacks;
+            _kstacks = kstack;
+
+            p += MYST_KERNEL_STACK_SIZE;
+        }
+
+        _kstacks_initialized = 1;
+    }
+
+    myst_spin_unlock(&_kstack_lock);
+}
+
+static kstack_t* _get_kstack(void)
+{
+}
+
 long myst_syscall(long n, long params[6])
 {
     uint8_t* stack = (uint8_t*)__myst_kernel_args.kernel_stacks_data;
     const size_t stack_size = MYST_KERNEL_STACK_SIZE;
     syscall_args_t args = {.n = n, .params = params};
+
+    /* initialize the kernel stacks on the first call */
+    _init_kstacks();
 
     register uint8_t* old_sp asm("rsp");
     register uint8_t* new_sp = stack + stack_size;
