@@ -5138,7 +5138,7 @@ long myst_syscall(long n, long params[6])
     if (new_sp > old_sp)
         myst_panic("new_sp > old_sp");
 
-    long ret = myst_call_on_stack2(stack + stack_size, _syscall, &args);
+    long ret = myst_call_on_stack(stack + stack_size, _syscall, &args);
 
     return ret;
 }

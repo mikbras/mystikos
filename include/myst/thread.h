@@ -341,6 +341,4 @@ int myst_set_thread_name(myst_thread_t* thread, const char* n);
 /* call the given function on the given stack */
 long myst_call_on_stack(void* stack, long (*func)(void* arg), void* arg);
 
-long myst_call_on_stack2(void* stack, long (*func)(void* arg), void* arg);
-
 #endif /* _MYST_THREAD_H */
