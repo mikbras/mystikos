@@ -4,13 +4,6 @@
 #ifndef _MYST_DEFS_H
 #define _MYST_DEFS_H
 
-#include <limits.h>
-
-/* musl libc defines PAGE_SIZE in <limits.h> */
-#ifndef PAGE_SIZE
-#define PAGE_SIZE 4096
-#endif
-
 #define MYST_PRINTF_FORMAT(N, M) __attribute__((format(printf, N, M)))
 
 #define MYST_STATIC_ASSERT(COND) _Static_assert(COND, __FILE__)
