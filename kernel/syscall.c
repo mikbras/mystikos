@@ -50,6 +50,7 @@
 #include <myst/initfini.h>
 #include <myst/inotifydev.h>
 #include <myst/kernel.h>
+#include <myst/kstack.h>
 #include <myst/libc.h>
 #include <myst/lsr.h>
 #include <myst/mmanutils.h>
@@ -70,6 +71,7 @@
 #include <myst/syscall.h>
 #include <myst/tcall.h>
 #include <myst/thread.h>
+#include <myst/time.h>
 #include <myst/times.h>
 #include <myst/trace.h>
 
@@ -3260,6 +3262,7 @@ static long _syscall(void* args_)
             pid_t* ptid = (pid_t*)args[4];
             void* newtls = (void*)args[5];
             pid_t* ctid = (void*)args[6];
+            int started = 0;
 
             _strace(
                 n,
@@ -3278,10 +3281,20 @@ static long _syscall(void* args_)
                 newtls,
                 ctid);
 
-            BREAK(_return(
-                n,
-                myst_syscall_clone(
-                    fn, child_stack, flags, arg, ptid, newtls, ctid)));
+            long ret = myst_syscall_clone(
+                fn, child_stack, flags, arg, ptid, newtls, ctid, &started);
+
+            // Wait to be signaled by thread.c:_run_thread() before continuing
+            if ((flags & CLONE_VFORK))
+            {
+                while (started == 0)
+                {
+                    const int op = FUTEX_WAIT | FUTEX_PRIVATE;
+                    myst_syscall_futex(&started, op, 0, 0, NULL, 0);
+                }
+            }
+
+            BREAK(_return(n, ret));
         }
         case SYS_fork:
             break;
@@ -5125,61 +5138,29 @@ done:
     return syscall_ret;
 }
 
-typedef struct kstack
-{
-    uint8_t guard[PAGE_SIZE];
-    struct kstack* next;
-} kstack_t;
-
-static myst_spinlock_t _kstack_lock;
-static int _kstacks_initialized;
-static kstack_t* _kstacks;
-
-static void _init_kstacks(void)
-{
-    myst_spin_lock(&_kstack_lock);
-
-    if (_kstacks_initialized == 0)
-    {
-        uint8_t* p = (uint8_t*)__myst_kernel_args.kernel_stacks_data;
-
-        for (size_t i = 0; i < MYST_NUM_KERNEL_STACKS; i++)
-        {
-            kstack_t* kstack = (kstack_t*)p;
-            kstack->next = _kstacks;
-            _kstacks = kstack;
-
-            p += MYST_KERNEL_STACK_SIZE;
-        }
-
-        _kstacks_initialized = 1;
-    }
-
-    myst_spin_unlock(&_kstack_lock);
-}
-
-static kstack_t* _get_kstack(void)
-{
-}
-
 long myst_syscall(long n, long params[6])
 {
-    uint8_t* stack = (uint8_t*)__myst_kernel_args.kernel_stacks_data;
-    const size_t stack_size = MYST_KERNEL_STACK_SIZE;
-    syscall_args_t args = {.n = n, .params = params};
+    long ret;
 
-    /* initialize the kernel stacks on the first call */
-    _init_kstacks();
+    // handle SYS_exit on the user stack since it never returns and is unable
+    // to relinquish the kernel stack. The user stack should be deep enough
+    // since SYS_exit handling uses very little stack.
+    if (n == SYS_exit)
+    {
+        syscall_args_t args = {.n = n, .params = params};
+        ret = _syscall(&args);
+    }
+    else
+    {
+        myst_kstack_t* kstack = myst_get_kstack();
 
-    register uint8_t* old_sp asm("rsp");
-    register uint8_t* new_sp = stack + stack_size;
-    // myst_eprintf("OLD_SP=%p\n", old_sp);
-    // myst_eprintf("NEW_SP=%p\n", new_sp);
+        if (!kstack)
+            myst_panic("no more kernel stacks");
 
-    if (new_sp > old_sp)
-        myst_panic("new_sp > old_sp");
-
-    long ret = myst_call_on_stack(stack + stack_size, _syscall, &args);
+        syscall_args_t args = {.n = n, .params = params};
+        ret = myst_call_on_stack(myst_kstack_end(kstack), _syscall, &args);
+        myst_put_kstack(kstack);
+    }
 
     return ret;
 }

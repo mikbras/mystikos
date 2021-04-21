@@ -6,14 +6,9 @@
 
 #include <limits.h>
 
+#include <myst/kstack.h>
 #include <myst/tcall.h>
 #include <myst/types.h>
-
-#define MYST_NUM_KERNEL_STACKS 1024
-
-#define MYST_KERNEL_STACK_SIZE (64 * 1024)
-
-#define MYST_KERNEL_ENTER_STACK_SIZE (132 * 1024)
 
 typedef struct _myst_host_enc_id_mapping
 {

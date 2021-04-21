@@ -223,6 +223,9 @@ struct myst_thread
     /* supplemental groups */
     size_t num_supgid;
     gid_t supgid[NGROUPS_MAX];
+
+    /* SYS_myst_clone waits for this to become non-zero before proceeding */
+    int* started;
 };
 
 MYST_INLINE bool myst_valid_thread(const myst_thread_t* thread)

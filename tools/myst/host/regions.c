@@ -425,8 +425,8 @@ static int _add_kernel_stacks_region(
 {
     int ret = 0;
     __attribute__((__aligned__(PAGE_SIZE))) uint8_t page[PAGE_SIZE];
-    const size_t num_stacks = MYST_NUM_KERNEL_STACKS;
-    const size_t num_stack_pages = MYST_KERNEL_STACK_SIZE / PAGE_SIZE;
+    const size_t num_stacks = MYST_MAX_KSTACKS;
+    const size_t num_stack_pages = MYST_KSTACK_SIZE / PAGE_SIZE;
     const char name[] = MYST_REGION_KERNEL_STACKS;
 
     if (!context || !vaddr)
@@ -478,7 +478,7 @@ static int _add_kernel_entry_stack_region(
 {
     int ret = 0;
     __attribute__((__aligned__(PAGE_SIZE))) uint8_t page[PAGE_SIZE];
-    const size_t num_stack_pages = MYST_KERNEL_ENTER_STACK_SIZE / PAGE_SIZE;
+    const size_t num_stack_pages = MYST_ENTER_KSTACK_SIZE / PAGE_SIZE;
     const char name[] = MYST_REGION_KERNEL_ENTER_STACK;
 
     if (!context || !vaddr)
