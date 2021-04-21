@@ -5143,8 +5143,7 @@ long myst_syscall(long n, long params[6])
     long ret;
 
     // handle SYS_exit on the user stack since it never returns and is unable
-    // to relinquish the kernel stack. The user stack should be deep enough
-    // since SYS_exit handling uses very little stack.
+    // to relinquish the kernel stack.
     if (n == SYS_exit)
     {
         syscall_args_t args = {.n = n, .params = params};

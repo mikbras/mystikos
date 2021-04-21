@@ -29,6 +29,9 @@
 
 #define BLKSIZE 512
 
+/* limit the stack size of the functions below */
+#pragma GCC diagnostic warning "-Wstack-usage=256"
+
 /* ATTN: check access for all read operations */
 /* ATTN: add whole-file-system locking */
 
@@ -143,32 +146,42 @@ static int _inode_add_dirent(
     const char* name)
 {
     int ret = 0;
+    struct vars
+    {
+        struct dirent ent;
+    };
+    struct vars* vars = NULL;
 
     if (!_inode_valid(dir) || !_inode_valid(inode) || !name)
         ERAISE(-EINVAL);
+
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
 
     if (type != DT_REG && type != DT_DIR && type != DT_LNK)
         ERAISE(-EINVAL);
 
     /* Append the new directory entry */
     {
-        struct dirent ent = {
-            .d_ino = (ino_t)inode,
-            .d_off = (off_t)dir->buf.size,
-            .d_reclen = sizeof(struct dirent),
-            .d_type = type,
-        };
+        vars->ent.d_ino = (ino_t)inode;
+        vars->ent.d_off = (off_t)dir->buf.size;
+        vars->ent.d_reclen = sizeof(struct dirent);
+        vars->ent.d_type = type;
 
-        if (MYST_STRLCPY(ent.d_name, name) >= sizeof(ent.d_name))
+        if (MYST_STRLCPY(vars->ent.d_name, name) >= sizeof(vars->ent.d_name))
             ERAISE(-ENAMETOOLONG);
 
-        if (myst_buf_append(&dir->buf, &ent, sizeof(ent)) != 0)
+        if (myst_buf_append(&dir->buf, &vars->ent, sizeof(vars->ent)) != 0)
             ERAISE(-ENOMEM);
     }
 
     _update_timestamps(dir, CHANGE | MODIFY);
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -618,7 +631,16 @@ static int _path_to_inode_realpath(
     char target[PATH_MAX])
 {
     int ret = 0;
-    char realpath[PATH_MAX] = {'\0'};
+    struct vars
+    {
+        char realpath[PATH_MAX];
+    };
+    struct vars* vars = NULL;
+
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
+    *vars->realpath = '\0';
 
     ECHECK(_path_to_inode_recursive(
         ramfs,
@@ -627,13 +649,17 @@ static int _path_to_inode_realpath(
         follow,
         parent_out,
         inode_out,
-        realpath_out ? realpath : NULL,
+        realpath_out ? vars->realpath : NULL,
         target));
 
     if (realpath_out)
-        ECHECK(myst_normalize(realpath, realpath_out, PATH_MAX));
+        ECHECK(myst_normalize(vars->realpath, realpath_out, PATH_MAX));
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -647,24 +673,35 @@ static int _path_to_inode(
     myst_fs_t** fs_out)
 {
     int ret = 0;
-    char target[PATH_MAX];
+    struct vars
+    {
+        char target[PATH_MAX];
+    };
+    struct vars* vars = NULL;
+
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
 
     if (suffix)
     {
         *suffix = '\0';
         *fs_out = NULL;
-        *target = '\0';
+        *vars->target = '\0';
     }
 
     ECHECK(_path_to_inode_realpath(
-        ramfs, path, follow, parent_out, inode_out, NULL, target));
+        ramfs, path, follow, parent_out, inode_out, NULL, vars->target));
 
-    if (suffix && *target != '\0' && ramfs->resolve)
+    if (suffix && *vars->target != '\0' && ramfs->resolve)
     {
-        ECHECK((*ramfs->resolve)(target, suffix, fs_out));
+        ECHECK((*ramfs->resolve)(vars->target, suffix, fs_out));
     }
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -748,8 +785,14 @@ static int _fs_open(
     int ret = 0;
     int errnum;
     bool is_i_new = false;
-    char suffix[PATH_MAX];
     myst_fs_t* tfs = NULL;
+    struct vars
+    {
+        char suffix[PATH_MAX];
+        char dirname[PATH_MAX];
+        char basename[PATH_MAX];
+    };
+    struct vars* vars = NULL;
 
     if (file_out)
         *file_out = NULL;
@@ -763,17 +806,22 @@ static int _fs_open(
     if (!file_out)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Create the file object */
     if (!(file = calloc(1, sizeof(myst_file_t))))
         ERAISE(-ENOMEM);
 
-    errnum = _path_to_inode(ramfs, pathname, true, NULL, &inode, suffix, &tfs);
+    errnum =
+        _path_to_inode(ramfs, pathname, true, NULL, &inode, vars->suffix, &tfs);
 
     if (tfs)
     {
         /* delegate open operation to target filesystem */
         ECHECK(
-            (ret = tfs->fs_open(tfs, suffix, flags, mode, fs_out, file_out)));
+            (ret = tfs->fs_open(
+                 tfs, vars->suffix, flags, mode, fs_out, file_out)));
         goto done;
     }
     else if (fs_out)
@@ -820,8 +868,6 @@ static int _fs_open(
     }
     else if (errnum == -ENOENT)
     {
-        char dirname[PATH_MAX];
-        char basename[PATH_MAX];
         inode_t* parent;
 
         is_i_new = true;
@@ -830,13 +876,15 @@ static int _fs_open(
             ERAISE(-ENOENT);
 
         /* Split the path into parent directory and file name */
-        ECHECK(_split_path(pathname, dirname, basename));
+        ECHECK(_split_path(pathname, vars->dirname, vars->basename));
 
         /* Get the inode of the parent directory. */
-        ECHECK(_path_to_inode(ramfs, dirname, true, NULL, &parent, NULL, NULL));
+        ECHECK(_path_to_inode(
+            ramfs, vars->dirname, true, NULL, &parent, NULL, NULL));
 
         /* Create the new file inode */
-        ECHECK(_inode_new(ramfs, parent, basename, (S_IFREG | mode), &inode));
+        ECHECK(_inode_new(
+            ramfs, parent, vars->basename, (S_IFREG | mode), &inode));
     }
     else
     {
@@ -861,6 +909,9 @@ static int _fs_open(
     inode = NULL;
 
 done:
+
+    if (vars)
+        free(vars);
 
     if (inode && is_i_new)
         _inode_free(ramfs, inode);
@@ -1239,22 +1290,30 @@ static int _fs_access(myst_fs_t* fs, const char* pathname, int mode)
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode;
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     if (mode != F_OK && !(mode & (R_OK | W_OK | X_OK)))
         ERAISE(-EINVAL);
 
     /* Get the inode for pathname */
-    ECHECK(_path_to_inode(ramfs, pathname, true, NULL, &inode, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, pathname, true, NULL, &inode, vars->suffix, &tfs));
 
     if (tfs)
     {
         // delegate operation to target filesystem.
-        ECHECK((ret = tfs->fs_access(tfs, suffix, mode)));
+        ECHECK((ret = tfs->fs_access(tfs, vars->suffix, mode)));
         goto done;
     }
 
@@ -1273,6 +1332,9 @@ static int _fs_access(myst_fs_t* fs, const char* pathname, int mode)
     _update_timestamps(inode, ACCESS);
 
 done:
+
+    if (vars)
+        free(vars);
 
     return ret;
 }
@@ -1327,22 +1389,34 @@ static int _fs_stat(myst_fs_t* fs, const char* pathname, struct stat* statbuf)
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode;
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname || !statbuf)
         ERAISE(-EINVAL);
 
-    ECHECK(_path_to_inode(ramfs, pathname, true, NULL, &inode, suffix, &tfs));
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
+    ECHECK(_path_to_inode(
+        ramfs, pathname, true, NULL, &inode, vars->suffix, &tfs));
     if (tfs)
     {
         // delegate operation to target filesystem.
-        ECHECK((ret = tfs->fs_stat(tfs, suffix, statbuf)));
+        ECHECK((ret = tfs->fs_stat(tfs, vars->suffix, statbuf)));
         goto done;
     }
     ERAISE(_stat(inode, statbuf));
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1351,22 +1425,34 @@ static int _fs_lstat(myst_fs_t* fs, const char* pathname, struct stat* statbuf)
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode;
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname || !statbuf)
         ERAISE(-EINVAL);
 
-    ECHECK(_path_to_inode(ramfs, pathname, false, NULL, &inode, suffix, &tfs));
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
+    ECHECK(_path_to_inode(
+        ramfs, pathname, false, NULL, &inode, vars->suffix, &tfs));
     if (tfs)
     {
         /* delegate operation to target filesystem */
-        ECHECK(tfs->fs_lstat(tfs, suffix, statbuf));
+        ECHECK(tfs->fs_lstat(tfs, vars->suffix, statbuf));
         goto done;
     }
     ERAISE(_stat(inode, statbuf));
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1391,21 +1477,28 @@ static int _fs_link(myst_fs_t* fs, const char* oldpath, const char* newpath)
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* old_inode;
     inode_t* new_parent;
-    char new_dirname[PATH_MAX];
-    char new_basename[PATH_MAX];
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char new_dirname[PATH_MAX];
+        char new_basename[PATH_MAX];
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs;
 
     if (!_ramfs_valid(ramfs) || !oldpath || !newpath)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Find the inode for oldpath */
-    ECHECK(
-        _path_to_inode(ramfs, oldpath, true, NULL, &old_inode, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, oldpath, true, NULL, &old_inode, vars->suffix, &tfs));
     if (tfs)
     {
         /* delegate operation to target filesystem */
-        ECHECK((ret = tfs->fs_link(tfs, suffix, newpath)));
+        ECHECK((ret = tfs->fs_link(tfs, vars->suffix, newpath)));
         goto done;
     }
 
@@ -1414,16 +1507,16 @@ static int _fs_link(myst_fs_t* fs, const char* oldpath, const char* newpath)
         ERAISE(-EPERM);
 
     /* Find the parent inode of newpath */
-    ECHECK(_split_path(newpath, new_dirname, new_basename));
+    ECHECK(_split_path(newpath, vars->new_dirname, vars->new_basename));
     ECHECK(_path_to_inode(
-        ramfs, new_dirname, true, NULL, &new_parent, NULL, NULL));
+        ramfs, vars->new_dirname, true, NULL, &new_parent, NULL, NULL));
 
     /* Fail if newpath already exists */
-    if (_inode_find_child(new_parent, new_basename) != NULL)
+    if (_inode_find_child(new_parent, vars->new_basename) != NULL)
         ERAISE(-EEXIST);
 
     /* Add the directory entry for the newpath */
-    _inode_add_dirent(new_parent, old_inode, DT_REG, new_basename);
+    _inode_add_dirent(new_parent, old_inode, DT_REG, vars->new_basename);
 
     /* Increment the file's link count */
     old_inode->nlink++;
@@ -1431,6 +1524,10 @@ static int _fs_link(myst_fs_t* fs, const char* oldpath, const char* newpath)
     _update_timestamps(old_inode, CHANGE);
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1438,9 +1535,13 @@ static int _fs_unlink(myst_fs_t* fs, const char* pathname)
 {
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
-    char dirname[PATH_MAX];
-    char basename[PATH_MAX];
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char dirname[PATH_MAX];
+        char basename[PATH_MAX];
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     inode_t* parent;
     inode_t* inode;
     myst_fs_t* tfs = NULL;
@@ -1448,12 +1549,16 @@ static int _fs_unlink(myst_fs_t* fs, const char* pathname)
     if (!_ramfs_valid(ramfs) || !pathname)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Get the inode for pathname */
-    ECHECK(_path_to_inode(ramfs, pathname, false, NULL, &inode, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, pathname, false, NULL, &inode, vars->suffix, &tfs));
     if (tfs)
     {
         /* delegate operation to target filesystem */
-        ECHECK((*tfs->fs_unlink)(tfs, suffix));
+        ECHECK((*tfs->fs_unlink)(tfs, vars->suffix));
         goto done;
     }
 
@@ -1462,12 +1567,13 @@ static int _fs_unlink(myst_fs_t* fs, const char* pathname)
         ERAISE(-EPERM);
 
     /* Get the parent inode */
-    ECHECK(_split_path(pathname, dirname, basename));
-    ECHECK(_path_to_inode(ramfs, dirname, true, NULL, &parent, NULL, NULL));
+    ECHECK(_split_path(pathname, vars->dirname, vars->basename));
+    ECHECK(
+        _path_to_inode(ramfs, vars->dirname, true, NULL, &parent, NULL, NULL));
 
     /* Find and remove the parent's directory entry */
     {
-        ECHECK(_inode_remove_dirent(parent, basename));
+        ECHECK(_inode_remove_dirent(parent, vars->basename));
 
         if (S_ISDIR(inode->mode))
             parent->nlink--;
@@ -1492,6 +1598,10 @@ static int _fs_unlink(myst_fs_t* fs, const char* pathname)
     }
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1499,11 +1609,15 @@ static int _fs_rename(myst_fs_t* fs, const char* oldpath, const char* newpath)
 {
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
-    char old_dirname[PATH_MAX];
-    char old_basename[PATH_MAX];
-    char new_dirname[PATH_MAX];
-    char new_basename[PATH_MAX];
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char old_dirname[PATH_MAX];
+        char old_basename[PATH_MAX];
+        char new_dirname[PATH_MAX];
+        char new_basename[PATH_MAX];
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     inode_t* old_parent = NULL;
     inode_t* old_inode = NULL;
     inode_t* new_parent = NULL;
@@ -1516,33 +1630,37 @@ static int _fs_rename(myst_fs_t* fs, const char* oldpath, const char* newpath)
     if (!_ramfs_valid(ramfs) || !oldpath || !newpath)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Split oldpath */
-    ECHECK(_split_path(oldpath, old_dirname, old_basename));
+    ECHECK(_split_path(oldpath, vars->old_dirname, vars->old_basename));
 
     /* Find the oldpath inode */
     ECHECK(_path_to_inode(
-        ramfs, oldpath, true, &old_parent, &old_inode, suffix, &tfs));
+        ramfs, oldpath, true, &old_parent, &old_inode, vars->suffix, &tfs));
     if (tfs)
     {
         /* append old_basename and delegate operation to target filesystem */
-        if (myst_strlcat(suffix, "/", PATH_MAX) >= PATH_MAX)
+        if (myst_strlcat(vars->suffix, "/", PATH_MAX) >= PATH_MAX)
             ERAISE_QUIET(-ENAMETOOLONG);
 
-        if (myst_strlcat(suffix, old_basename, PATH_MAX) >= PATH_MAX)
+        if (myst_strlcat(vars->suffix, vars->old_basename, PATH_MAX) >=
+            PATH_MAX)
             ERAISE_QUIET(-ENAMETOOLONG);
-        ECHECK(tfs->fs_rename(tfs, suffix, newpath));
+        ECHECK(tfs->fs_rename(tfs, vars->suffix, newpath));
         goto done;
     }
 
     /* Split newpath */
-    ECHECK(_split_path(newpath, new_dirname, new_basename));
+    ECHECK(_split_path(newpath, vars->new_dirname, vars->new_basename));
 
     /* Get the parent of newpath */
     ECHECK(_path_to_inode(
-        ramfs, new_dirname, true, NULL, &new_parent, NULL, NULL));
+        ramfs, vars->new_dirname, true, NULL, &new_parent, NULL, NULL));
 
     /* Get the newpath inode (if any) */
-    new_inode = _inode_find_child(new_parent, new_basename);
+    new_inode = _inode_find_child(new_parent, vars->new_basename);
 
     /* Succeed if oldpath and newpath refer to the same inode */
     if (new_inode == old_inode)
@@ -1561,7 +1679,7 @@ static int _fs_rename(myst_fs_t* fs, const char* oldpath, const char* newpath)
 
     /* Remove the oldpath directory entry */
     {
-        ECHECK(_inode_remove_dirent(old_parent, old_basename));
+        ECHECK(_inode_remove_dirent(old_parent, vars->old_basename));
 
         if (S_ISDIR(old_inode->mode))
             old_parent->nlink--;
@@ -1570,7 +1688,7 @@ static int _fs_rename(myst_fs_t* fs, const char* oldpath, const char* newpath)
     /* Remove the newpath directory entry if any */
     if (new_inode)
     {
-        ECHECK(_inode_remove_dirent(new_parent, new_basename));
+        ECHECK(_inode_remove_dirent(new_parent, vars->new_basename));
 
         if (S_ISDIR(new_inode->mode))
             new_parent->nlink--;
@@ -1580,7 +1698,7 @@ static int _fs_rename(myst_fs_t* fs, const char* oldpath, const char* newpath)
 
     /* Add the newpath directory entry */
     {
-        _inode_add_dirent(new_parent, old_inode, DT_REG, new_basename);
+        _inode_add_dirent(new_parent, old_inode, DT_REG, vars->new_basename);
 
         if (S_ISDIR(old_inode->mode))
             new_parent->nlink++;
@@ -1591,6 +1709,10 @@ static int _fs_rename(myst_fs_t* fs, const char* oldpath, const char* newpath)
         _inode_free(ramfs, new_inode);
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1599,17 +1721,25 @@ static int _fs_truncate(myst_fs_t* fs, const char* pathname, off_t length)
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode;
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname || length < 0)
         ERAISE(-EINVAL);
 
-    ECHECK(_path_to_inode(ramfs, pathname, true, NULL, &inode, suffix, &tfs));
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
+    ECHECK(_path_to_inode(
+        ramfs, pathname, true, NULL, &inode, vars->suffix, &tfs));
     if (tfs)
     {
         // delegate operation to target filesystem.
-        ECHECK((ret = tfs->fs_truncate(tfs, suffix, length)));
+        ECHECK((ret = tfs->fs_truncate(tfs, vars->suffix, length)));
         goto done;
     }
 
@@ -1622,6 +1752,10 @@ static int _fs_truncate(myst_fs_t* fs, const char* pathname, off_t length)
     _update_timestamps(inode, CHANGE | MODIFY);
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1649,27 +1783,35 @@ static int _fs_mkdir(myst_fs_t* fs, const char* pathname, mode_t mode)
 {
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
-    char dirname[PATH_MAX];
-    char basename[PATH_MAX];
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char dirname[PATH_MAX];
+        char basename[PATH_MAX];
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     inode_t* parent;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname)
         ERAISE(-EINVAL);
 
-    ECHECK(_split_path(pathname, dirname, basename));
-    ECHECK(_path_to_inode(ramfs, dirname, true, NULL, &parent, suffix, &tfs));
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
+    ECHECK(_split_path(pathname, vars->dirname, vars->basename));
+    ECHECK(_path_to_inode(
+        ramfs, vars->dirname, true, NULL, &parent, vars->suffix, &tfs));
     if (tfs)
     {
         /* append basename and delegate operation to target filesystem */
-        if (myst_strlcat(suffix, "/", PATH_MAX) >= PATH_MAX)
+        if (myst_strlcat(vars->suffix, "/", PATH_MAX) >= PATH_MAX)
             ERAISE_QUIET(-ENAMETOOLONG);
 
-        if (myst_strlcat(suffix, basename, PATH_MAX) >= PATH_MAX)
+        if (myst_strlcat(vars->suffix, vars->basename, PATH_MAX) >= PATH_MAX)
             ERAISE_QUIET(-ENAMETOOLONG);
 
-        ECHECK((*tfs->fs_mkdir)(tfs, suffix, mode));
+        ECHECK((*tfs->fs_mkdir)(tfs, vars->suffix, mode));
         goto done;
     }
 
@@ -1678,13 +1820,17 @@ static int _fs_mkdir(myst_fs_t* fs, const char* pathname, mode_t mode)
         ERAISE(-ENOTDIR);
 
     /* Check whether the pathname already exists */
-    if (_inode_find_child(parent, basename) != NULL)
+    if (_inode_find_child(parent, vars->basename) != NULL)
         ERAISE(-EEXIST);
 
     /* create the directory */
-    ERAISE(_inode_new(ramfs, parent, basename, (S_IFDIR | mode), NULL));
+    ERAISE(_inode_new(ramfs, parent, vars->basename, (S_IFDIR | mode), NULL));
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1692,9 +1838,13 @@ static int _fs_rmdir(myst_fs_t* fs, const char* pathname)
 {
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
-    char dirname[PATH_MAX];
-    char basename[PATH_MAX];
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char dirname[PATH_MAX];
+        char basename[PATH_MAX];
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     inode_t* parent;
     inode_t* child;
     myst_fs_t* tfs = NULL;
@@ -1702,12 +1852,16 @@ static int _fs_rmdir(myst_fs_t* fs, const char* pathname)
     if (!_ramfs_valid(ramfs) || !pathname)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Get the child inode */
-    ECHECK(_path_to_inode(ramfs, pathname, true, NULL, &child, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, pathname, true, NULL, &child, vars->suffix, &tfs));
     if (tfs)
     {
         /* delegate operation to target filesystem */
-        ECHECK(tfs->fs_rmdir(tfs, suffix));
+        ECHECK(tfs->fs_rmdir(tfs, vars->suffix));
         goto done;
     }
 
@@ -1720,11 +1874,12 @@ static int _fs_rmdir(myst_fs_t* fs, const char* pathname)
         ERAISE(-ENOTEMPTY);
 
     /* Get the parent inode */
-    ECHECK(_split_path(pathname, dirname, basename));
-    ECHECK(_path_to_inode(ramfs, dirname, true, NULL, &parent, NULL, NULL));
+    ECHECK(_split_path(pathname, vars->dirname, vars->basename));
+    ECHECK(
+        _path_to_inode(ramfs, vars->dirname, true, NULL, &parent, NULL, NULL));
 
     /* Find and remove the parent directory entry */
-    ECHECK(_inode_remove_dirent(parent, basename));
+    ECHECK(_inode_remove_dirent(parent, vars->basename));
     parent->nlink--;
 
     /* remove the parent directory link to this inode */
@@ -1740,6 +1895,10 @@ static int _fs_rmdir(myst_fs_t* fs, const char* pathname)
         _inode_free(ramfs, child);
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1753,9 +1912,17 @@ static int _fs_getdents64(
     ramfs_t* ramfs = (ramfs_t*)fs;
     size_t n = count / sizeof(struct dirent);
     size_t bytes = 0;
+    struct vars
+    {
+        struct dirent ent;
+    };
+    struct vars* vars = NULL;
 
     if (!_ramfs_valid(ramfs) || !_file_valid(file) || !dirp)
         ERAISE(-EINVAL);
+
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
 
     if (count == 0)
         goto done;
@@ -1766,18 +1933,17 @@ static int _fs_getdents64(
 
     for (size_t i = 0; i < n; i++)
     {
-        struct dirent ent;
         ssize_t r;
 
         /* Read next entry and break on end-of-file */
-        if ((r = _fs_read(fs, file, &ent, sizeof(ent))) == 0)
+        if ((r = _fs_read(fs, file, &vars->ent, sizeof(vars->ent))) == 0)
             break;
 
         /* Fail if exactly one entry was not read */
-        if (r != sizeof(ent))
+        if (r != sizeof(vars->ent))
             myst_panic("unexpected");
 
-        *dirp = ent;
+        *dirp = vars->ent;
         bytes += sizeof(struct dirent);
         dirp++;
     }
@@ -1785,6 +1951,10 @@ static int _fs_getdents64(
     ret = (int)bytes;
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1797,18 +1967,26 @@ static ssize_t _fs_readlink(
     ssize_t ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode;
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname || !buf || !bufsiz)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Get the inode for pathname */
-    ECHECK(_path_to_inode(ramfs, pathname, false, NULL, &inode, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, pathname, false, NULL, &inode, vars->suffix, &tfs));
     if (tfs)
     {
         /* delegate operation to target filesystem */
-        ECHECK((ret = tfs->fs_readlink(tfs, suffix, buf, bufsiz)));
+        ECHECK((ret = tfs->fs_readlink(tfs, vars->suffix, buf, bufsiz)));
         goto done;
     }
 
@@ -1834,6 +2012,9 @@ static ssize_t _fs_readlink(
 
 done:
 
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -1843,9 +2024,13 @@ static int _fs_symlink(myst_fs_t* fs, const char* target, const char* linkpath)
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode = NULL;
     inode_t* parent = NULL;
-    char dirname[PATH_MAX];
-    char basename[PATH_MAX];
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char dirname[PATH_MAX];
+        char basename[PATH_MAX];
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs))
@@ -1854,31 +2039,38 @@ static int _fs_symlink(myst_fs_t* fs, const char* target, const char* linkpath)
     if (!target || !linkpath)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Split linkpath into directory and filename */
-    ECHECK(_split_path(linkpath, dirname, basename));
+    ECHECK(_split_path(linkpath, vars->dirname, vars->basename));
 
     /* Get the inode of the parent directory */
-    ECHECK(_path_to_inode(ramfs, dirname, true, NULL, &parent, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, vars->dirname, true, NULL, &parent, vars->suffix, &tfs));
     if (tfs)
     {
         /* append basename and delegate operation to target filesystem */
-        if (myst_strlcat(suffix, "/", PATH_MAX) >= PATH_MAX)
+        if (myst_strlcat(vars->suffix, "/", PATH_MAX) >= PATH_MAX)
             ERAISE_QUIET(-ENAMETOOLONG);
 
-        if (myst_strlcat(suffix, basename, PATH_MAX) >= PATH_MAX)
+        if (myst_strlcat(vars->suffix, vars->basename, PATH_MAX) >= PATH_MAX)
             ERAISE_QUIET(-ENAMETOOLONG);
-        ECHECK((*tfs->fs_symlink)(tfs, target, suffix));
+        ECHECK((*tfs->fs_symlink)(tfs, target, vars->suffix));
         goto done;
     }
 
     /* Create the new link inode */
-    ECHECK(_inode_new(ramfs, parent, basename, (S_IFLNK | 0777), &inode));
+    ECHECK(_inode_new(ramfs, parent, vars->basename, (S_IFLNK | 0777), &inode));
 
     /* Write the target name into the link inode */
     if (myst_buf_append(&inode->buf, target, strlen(target) + 1) != 0)
         ERAISE(-ENOMEM);
 
 done:
+
+    if (vars)
+        free(vars);
 
     return ret;
 }
@@ -2067,23 +2259,35 @@ static int _fs_statfs(myst_fs_t* fs, const char* pathname, struct statfs* buf)
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t* inode;
-    char suffix[PATH_MAX];
+    struct vars
+    {
+        char suffix[PATH_MAX];
+    };
+    struct vars* vars = NULL;
     myst_fs_t* tfs = NULL;
 
     if (!_ramfs_valid(ramfs) || !pathname || !buf)
         ERAISE(-EINVAL);
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     /* Check if path exists */
-    ECHECK(_path_to_inode(ramfs, pathname, true, NULL, &inode, suffix, &tfs));
+    ECHECK(_path_to_inode(
+        ramfs, pathname, true, NULL, &inode, vars->suffix, &tfs));
     if (tfs)
     {
         // delegate operation to target filesystem.
-        ECHECK((ret = tfs->fs_statfs(tfs, suffix, buf)));
+        ECHECK((ret = tfs->fs_statfs(tfs, vars->suffix, buf)));
         goto done;
     }
     ECHECK(_statfs(buf));
 
 done:
+
+    if (vars)
+        free(vars);
+
     return ret;
 }
 
@@ -2328,12 +2532,21 @@ int myst_release_tree(myst_fs_t* fs, const char* pathname)
     int ret = 0;
     ramfs_t* ramfs = (ramfs_t*)fs;
     inode_t *parent, *self;
+    struct vars
+    {
+        char dirname[PATH_MAX];
+        char basename[PATH_MAX];
+    };
+    struct vars* vars = NULL;
 
     if (!_ramfs_valid(ramfs))
         ERAISE(-EINVAL);
 
     if (!pathname)
         ERAISE(-EINVAL);
+
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
 
     ECHECK(_path_to_inode(ramfs, pathname, true, &parent, &self, NULL, NULL));
 
@@ -2359,17 +2572,19 @@ int myst_release_tree(myst_fs_t* fs, const char* pathname)
 
     /* Remove directory entry from parent */
     {
-        char dirname[PATH_MAX];
-        char basename[PATH_MAX];
         /* Get the parent inode */
-        ECHECK(_split_path(pathname, dirname, basename));
+        ECHECK(_split_path(pathname, vars->dirname, vars->basename));
+
         /* Find and remove the parent's directory entry */
         {
-            ECHECK(_inode_remove_dirent(parent, basename));
+            ECHECK(_inode_remove_dirent(parent, vars->basename));
         }
     }
 
 done:
+
+    if (vars)
+        free(vars);
 
     return ret;
 }

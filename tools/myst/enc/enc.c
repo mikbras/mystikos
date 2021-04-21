@@ -16,6 +16,7 @@
 #include <myst/eraise.h>
 #include <myst/file.h>
 #include <myst/kernel.h>
+#include <myst/kstack.h>
 #include <myst/mmanutils.h>
 #include <myst/mount.h>
 #include <myst/ramfs.h>
@@ -741,7 +742,9 @@ int myst_load_fssig(const char* path, myst_fssig_t* fssig)
 #define ENCLAVE_DEBUG true
 #define ENCLAVE_HEAP_SIZE 131072
 #define ENCLAVE_STACK_SIZE 8192
-#define ENCLAVE_MAX_THREADS 1024
+
+/* Note: there should be at least as many kernel stacks as threads */
+#define ENCLAVE_MAX_THREADS MYST_MAX_KSTACKS
 
 OE_SET_ENCLAVE_SGX(
     ENCLAVE_PRODUCT_ID,
