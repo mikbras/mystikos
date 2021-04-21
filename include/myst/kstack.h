@@ -18,7 +18,7 @@ typedef struct myst_kstack
     uint8_t guard[4096]; /* overlaid onto non-accessible memory */
     union {
         struct myst_kstack* next; /* used only when on the free list */
-        uint8_t __data[MYST_KSTACK_SIZE - PAGE_SIZE];
+        uint8_t __data[MYST_KSTACK_SIZE - 4096];
     } u;
 } myst_kstack_t;
 
