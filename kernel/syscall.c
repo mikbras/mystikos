@@ -2778,7 +2778,7 @@ typedef struct syscall_args
 
 /* ATTN: optimize _syscall() stack usage later */
 #pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wstack-usage=4096"
+#pragma GCC diagnostic error "-Wstack-usage=4096"
 static long _syscall(void* args_)
 {
     syscall_args_t* args = (syscall_args_t*)args_;
