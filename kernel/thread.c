@@ -587,14 +587,6 @@ static long _run_thread(void* arg_)
     }
     else
     {
-        /* signal SYS_myst_clone that the thread has started */
-        if (thread->started)
-        {
-            myst_atomic_exchange(thread->started, 1);
-            const int op = FUTEX_WAKE | FUTEX_PRIVATE;
-            myst_syscall_futex(thread->started, op, 1, 0, NULL, 0);
-        }
-
         /* ---------- running target thread descriptor ---------- */
 
         /* set the fsbase to C-runtime */
@@ -750,8 +742,7 @@ static long _syscall_clone_vfork(
     int (*fn)(void*),
     void* child_stack,
     int flags,
-    void* arg,
-    int* started)
+    void* arg)
 {
     long ret = 0;
     uint64_t cookie = 0;
@@ -775,7 +766,6 @@ static long _syscall_clone_vfork(
         if (!(child = calloc(1, sizeof(myst_thread_t))))
             ERAISE(-ENOMEM);
 
-        child->started = started;
         child->magic = MYST_THREAD_MAGIC;
         child->fdtable = parent->fdtable;
         child->sid = parent->sid;
@@ -875,11 +865,10 @@ long myst_syscall_clone(
     void* arg,
     pid_t* ptid,
     void* newtls,
-    pid_t* ctid,
-    int* started)
+    pid_t* ctid)
 {
     if (flags & CLONE_VFORK)
-        return _syscall_clone_vfork(fn, child_stack, flags, arg, started);
+        return _syscall_clone_vfork(fn, child_stack, flags, arg);
     else
         return _syscall_clone(fn, child_stack, flags, arg, ptid, newtls, ctid);
 }

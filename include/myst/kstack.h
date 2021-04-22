@@ -9,7 +9,6 @@
 #include <myst/defs.h>
 
 #define MYST_MAX_KSTACKS 1024
-//#define MYST_KSTACK_SIZE (132 * 1024)
 #define MYST_KSTACK_SIZE (64 * 1024)
 #define MYST_ENTER_KSTACK_SIZE (132 * 1024)
 

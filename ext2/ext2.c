@@ -26,6 +26,9 @@
 #define EXT2_DOUBLE_INDIRECT_BLOCK 13
 #define EXT2_TRIPLE_INDIRECT_BLOCK 14
 
+/* limit the stack size of the functions below */
+#pragma GCC diagnostic warning "-Wstack-usage=2048"
+
 #if 0
 #define CHECKS
 #endif
@@ -1028,6 +1031,14 @@ static int _load_file_by_inode(
     size_t* size)
 {
     int ret = 0;
+    struct vars
+    {
+        myst_file_t file;
+    };
+    struct vars* vars = NULL;
+
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
 
     /* Initialize the output */
     *data = NULL;
@@ -1036,21 +1047,23 @@ static int _load_file_by_inode(
     /* load the contents of the file */
     {
         /* create a dummy file struct */
-        myst_file_t file = {
-            .magic = FILE_MAGIC,
-            .ino = ino,
-            .inode = *inode,
-            .offset = 0,
-            .access = O_RDONLY,
-            .open_flags = O_RDONLY,
-        };
+        memset(vars, 0, sizeof(struct vars));
+        vars->file.magic = FILE_MAGIC;
+        vars->file.ino = ino;
+        vars->file.inode = *inode;
+        vars->file.offset = 0;
+        vars->file.access = O_RDONLY;
+        vars->file.open_flags = O_RDONLY;
 
         /* load the data */
-        ECHECK(_load_file(ext2, &file, data, size));
-        _file_clear(&file);
+        ECHECK(_load_file(ext2, &vars->file, data, size));
+        _file_clear(&vars->file);
     }
 
 done:
+
+    if (vars)
+        free(vars);
 
     return ret;
 }
@@ -1160,7 +1173,12 @@ static int _path_to_ino_recursive(
     char target_out[PATH_MAX])
 {
     int ret = 0;
-    char buf[EXT2_PATH_MAX];
+    struct vars
+    {
+        char buf[EXT2_PATH_MAX];
+        char target[EXT2_PATH_MAX];
+    };
+    struct vars* vars = NULL;
     const char* toks[32];
     const uint8_t NELEMENTS = sizeof(toks) / sizeof(toks[0]);
     uint8_t ntoks = 0;
@@ -1171,20 +1189,23 @@ static int _path_to_ino_recursive(
     void* data = NULL;
     size_t size;
 
+    if (!(vars = malloc(sizeof(struct vars))))
+        ERAISE(-ENOMEM);
+
     if (dir_ino_out)
         *dir_ino_out = 0;
 
     if (file_ino_out)
         *file_ino_out = 0;
 
-    if (myst_strlcpy(buf, path, sizeof(buf)) >= EXT2_PATH_MAX)
+    if (myst_strlcpy(vars->buf, path, sizeof(vars->buf)) >= EXT2_PATH_MAX)
         ERAISE(-ENAMETOOLONG);
 
     if (path[0] == '/')
         current_ino = EXT2_ROOT_INO;
 
     /* split the path into components */
-    for (p = strtok_r(buf, "/", &save); p; p = strtok_r(NULL, "/", &save))
+    for (p = strtok_r(vars->buf, "/", &save); p; p = strtok_r(NULL, "/", &save))
     {
         if (ntoks == NELEMENTS)
             ERAISE(-ENAMETOOLONG);
@@ -1208,22 +1229,21 @@ static int _path_to_ino_recursive(
             /* only check follow tag on final element */
             if (i + 1 != ntoks || follow == FOLLOW)
             {
-                char target[EXT2_PATH_MAX];
-
                 /* load the target from the symlink */
                 ECHECK((_load_file_by_ino(ext2, ino, &data, &size)));
 
                 if (size >= EXT2_PATH_MAX)
                     ERAISE(-ENAMETOOLONG);
 
-                memcpy(target, data, size);
-                target[size] = '\0';
+                memcpy(vars->target, data, size);
+                vars->target[size] = '\0';
 
-                if (*target == '/')
+                if (*vars->target == '/')
                 {
                     if (target_out)
                     {
-                        myst_strlcpy(target_out, target, PATH_MAX);
+                        myst_strlcpy(target_out, vars->target, PATH_MAX);
+
                         // Copy over rest of unresolved tokens
                         if (i + 1 != ntoks)
                         {
@@ -1250,7 +1270,7 @@ static int _path_to_ino_recursive(
 
                 ECHECK(_path_to_ino_recursive(
                     ext2,
-                    target,
+                    vars->target,
                     current_ino,
                     FOLLOW,
                     &current_ino,
@@ -1281,6 +1301,9 @@ static int _path_to_ino_recursive(
     ret = 0;
 
 done:
+
+    if (vars)
+        free(vars);
 
     if (data)
         free(data);

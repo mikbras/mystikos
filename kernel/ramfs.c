@@ -163,6 +163,7 @@ static int _inode_add_dirent(
 
     /* Append the new directory entry */
     {
+        memset(&vars->ent, 0, sizeof(vars->ent));
         vars->ent.d_ino = (ino_t)inode;
         vars->ent.d_off = (off_t)dir->buf.size;
         vars->ent.d_reclen = sizeof(struct dirent);

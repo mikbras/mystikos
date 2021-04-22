@@ -18,7 +18,6 @@ CFLAGS += -fdata-sections
 CFLAGS += -Wno-conversion
 CFLAGS += -Wno-parentheses
 CFLAGS += -O3
-CFLAGS += -Wstack-usage=4096
 
 # ATTN: enable this!
 #CFLAGS += -Wextra

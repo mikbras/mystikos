@@ -207,8 +207,7 @@ long myst_syscall_clone(
     void* arg,
     pid_t* ptid,
     void* newtls,
-    pid_t* ctid,
-    int* started);
+    pid_t* ctid);
 
 long myst_syscall_futex(
     int* uaddr,

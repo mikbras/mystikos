@@ -228,8 +228,6 @@ static void _dump_group_descs(
     }
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstack-usage="
 static void _dump_inode(const ext2_t* ext2, const ext2_inode_t* inode)
 {
     uint32_t i;
@@ -300,7 +298,6 @@ static void _dump_inode(const ext2_t* ext2, const ext2_inode_t* inode)
         }
     }
 }
-#pragma GCC diagnostic pop
 
 #if 0
 static void _dump_dirent(const ext2_dirent_t* dirent)
@@ -314,8 +311,6 @@ static void _dump_dirent(const ext2_dirent_t* dirent)
 }
 #endif
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstack-usage="
 int ext2_dump(const ext2_t* ext2)
 {
     int ret = 0;
@@ -408,7 +403,6 @@ int ext2_dump(const ext2_t* ext2)
 done:
     return ret;
 }
-#pragma GCC diagnostic pop
 
 #if 0
 static void _DumpDirectoryEntries(
