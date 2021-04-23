@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/syscall.h>
@@ -11,7 +12,26 @@
 
 extern int myst_fork(void);
 
-void foo()
+int _gettid(void)
+{
+    return syscall(SYS_gettid);
+}
+
+int _printf(const char* fmt, ...)
+{
+    static pthread_mutex_t _lock = PTHREAD_MUTEX_INITIALIZER;
+    va_list ap;
+
+    va_start(ap, fmt);
+    pthread_mutex_lock(&_lock);
+    fprintf(stderr, "_printf: tid=%d: ", _gettid());
+    vfprintf(stderr, fmt, ap);
+    fflush(stderr);
+    pthread_mutex_unlock(&_lock);
+    va_end(ap);
+}
+
+void point()
 {
 }
 
@@ -27,17 +47,22 @@ int main(int argc, const char* argv[])
     }
     else if (pid == 0)
     {
-        printf("*** inside child\n");
+        _printf("*** inside child\n");
     }
     else
     {
-        printf("*** inside parent\n");
+        _printf("*** inside parent\n");
     }
 
-    printf("sleep: %d\n", pid);
-    sleep(3);
-    foo();
-    printf("done\n");
-    fflush(stdout);
+    _printf("sleep: %d\n", pid);
+
+    if (pid == 0)
+        sleep(3);
+    else
+        sleep(2);
+
+    point();
+
+    _printf("done\n");
     exit(0);
 }
