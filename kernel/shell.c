@@ -195,26 +195,33 @@ static void _mem_command(int argc, char** argv)
     extern void dlmalloc_stats(void);
     const size_t mb = 1024 * 1024;
     size_t n;
-    myst_mman_stats_t buf;
+    struct vars
+    {
+        myst_mman_stats_t buf;
+    };
+    struct vars* v = NULL;
 
-    myst_mman_stats(&buf);
+    if (!(v = malloc(sizeof(struct vars))))
+        myst_panic("out of memory");
+
+    myst_mman_stats(&v->buf);
 
     (void)argc;
     (void)argv;
 
-    n = buf.total_size;
+    n = v->buf.total_size;
     printf("total ram    =%11zu (%zumb)\n", n, n / mb);
 
-    n = buf.free_size;
+    n = v->buf.free_size;
     printf("free ram     =%11zu (%zumb)\n", n, n / mb);
 
-    n = buf.used_size;
+    n = v->buf.used_size;
     printf("used ram     =%11zu (%zumb)\n", n, n / mb);
 
-    n = buf.map_size;
+    n = v->buf.map_size;
     printf("map used     =%11zu (%zumb)\n", n, n / mb);
 
-    n = buf.brk_size;
+    n = v->buf.brk_size;
     printf("brk used     =%11zu (%zumb)\n", n, n / mb);
 
     n = __myst_kernel_args.rootfs_size;
@@ -230,6 +237,9 @@ static void _mem_command(int argc, char** argv)
     printf("archive size =%11zu (%zumb)\n", n, n / mb);
 
     printf("\n");
+
+    if (v)
+        free(v);
 }
 
 static void _env_command(int argc, char** argv)

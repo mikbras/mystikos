@@ -516,21 +516,23 @@ __attribute__((format(printf, 2, 3))) static void _strace(
 {
     if (__options.trace_syscalls)
     {
+        char null_char = '\0';
+        char* buf = &null_char;
         const bool isatty = myst_syscall_isatty(STDERR_FILENO) == 1;
         const char* blue = isatty ? COLOR_GREEN : "";
         const char* reset = isatty ? COLOR_RESET : "";
-        char buf[1024];
 
         if (fmt)
         {
+            const size_t buf_size = 1024;
+
+            if (!(buf = malloc(buf_size)))
+                myst_panic("out of memory");
+
             va_list ap;
             va_start(ap, fmt);
-            vsnprintf(buf, sizeof(buf), fmt, ap);
+            vsnprintf(buf, buf_size, fmt, ap);
             va_end(ap);
-        }
-        else
-        {
-            *buf = '\0';
         }
 
         myst_eprintf(
@@ -540,6 +542,9 @@ __attribute__((format(printf, 2, 3))) static void _strace(
             reset,
             buf,
             myst_gettid());
+
+        if (buf != &null_char)
+            free(buf);
     }
 }
 
@@ -2778,7 +2783,7 @@ typedef struct syscall_args
 
 /* ATTN: optimize _syscall() stack usage later */
 #pragma GCC diagnostic push
-#pragma GCC diagnostic error "-Wstack-usage=4096"
+#pragma GCC optimize "-Og" // reduces stack usage across case statements
 static long _syscall(void* args_)
 {
     syscall_args_t* args = (syscall_args_t*)args_;
