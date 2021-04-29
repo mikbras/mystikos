@@ -26,21 +26,19 @@ libname=$1
 
 rm -rf ./libgcov.a
 
-tmpsrc=$(/bin/mktemp --suffix=.c)
-echo "int main() { return 0; }" > ${tmpsrc}
+version=$(gcc --version | head -n1 | awk '{print $4}' | cut -f 1 -d .)
+if [ -z "${version}" ]; then
+    echo "$0: failed to get gcc version"
+    exit 1
+fi
 
-tmpmain=$(/bin/mktemp)
-libgcov=$(gcc -o${tmpmain} -Wl,-trace ${tmpsrc} -lgcov | grep libgcov.a)
-
-rm -f "${tmpmain}"
-rm -f "${tmpsrc}"
-
+libgcov=/usr/lib/gcc/x86_64-linux-gnu/${version}/libgcov.a
 if [ ! -f "${libgcov}" ]; then
     echo "$0: cannot find the system libgcov.a"
     exit 1
 fi
 
-cp "${libgcov}" ${libname}
+cp "${libgcov}" "${libname}"
 
 ##==============================================================================
 ##
