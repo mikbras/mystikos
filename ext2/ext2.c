@@ -277,9 +277,6 @@ static ssize_t _write(
     if (!dev || !data)
         goto done;
 
-    if (!(v = malloc(sizeof(struct vars))))
-        goto done;
-
     blkno = offset / blksz;
 
     /* optimize for common case where offset and size are divisible by blksz */
@@ -298,6 +295,9 @@ static ssize_t _write(
     }
     else
     {
+        if (!(v = malloc(sizeof(struct vars))))
+            goto done;
+
         for (i = blkno, rem = size, ptr = (uint8_t*)data; rem; i++)
         {
             uint32_t off; /* offset into this block */
