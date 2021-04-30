@@ -26,7 +26,7 @@ libname=$1
 
 rm -rf ./libgcov.a
 
-version=$(gcc --version | head -n1 | awk '{print $4}' | cut -f 1 -d .)
+version=$(gcc -dumpversion)
 if [ -z "${version}" ]; then
     echo "$0: failed to get gcc version"
     exit 1
