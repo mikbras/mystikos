@@ -152,6 +152,9 @@ typedef struct myst_kernel_args
     /* true if --memcheck option present */
     bool memcheck;
 
+    /* true if --leakcheck option present */
+    bool leakcheck;
+
     /* Callback for making target-calls */
     myst_tcall_t tcall;
 

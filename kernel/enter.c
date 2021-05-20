@@ -582,7 +582,7 @@ int myst_enter_kernel(myst_kernel_args_t* args)
 
 #if !defined(MYST_RELEASE)
     /* enable memcheck if options present and in TEE debug mode */
-    if (args->memcheck && args->tee_debug_mode)
+    if ((args->memcheck || args->leakcheck) && args->tee_debug_mode)
         myst_enable_debug_malloc = true;
 #endif
 
@@ -805,11 +805,19 @@ int myst_enter_kernel(myst_kernel_args_t* args)
     myst_call_atexit_functions();
 
     /* check for memory leaks */
-    if (myst_enable_debug_malloc)
+#if !defined(MYST_RELEASE)
+    if ((args->leakcheck || args->memcheck) && args->tee_debug_mode)
     {
-        if (myst_debug_malloc_check(true) != 0)
-            myst_eprintf("*** memory leaks detected\n");
+        const bool dump = args->leakcheck;
+
+        /* dump leaked blocks */
+        if (myst_debug_malloc_check(dump) != 0)
+        {
+            if (dump)
+                myst_eprintf("*** memory leaks detected\n");
+        }
     }
+#endif
 
     /* ATTN: move myst_call_atexit_functions() here */
 

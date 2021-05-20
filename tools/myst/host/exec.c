@@ -255,6 +255,24 @@ int exec_action(int argc, const char* argv[], const char* envp[])
         if (cli_getopt(&argc, argv, "--memcheck", NULL) == 0)
             options.memcheck = true;
 
+        /* Get --leakcheck option */
+        if (cli_getopt(&argc, argv, "--leakcheck", NULL) == 0)
+            options.leakcheck = true;
+
+        /* Get MYST_MEMCHECK environment variable */
+        {
+            const char* env;
+            if ((env = getenv("MYST_MEMCHECK")) && strcmp(env, "1") == 0)
+                options.memcheck = true;
+        }
+
+        /* Get MYST_LEAKCHECK environment variable */
+        {
+            const char* env;
+            if ((env = getenv("MYST_LEAKCHECK")) && strcmp(env, "1") == 0)
+                options.leakcheck = true;
+        }
+
         /* Get --export-ramfs option */
         if (cli_getopt(&argc, argv, "--export-ramfs", NULL) == 0)
             options.export_ramfs = true;

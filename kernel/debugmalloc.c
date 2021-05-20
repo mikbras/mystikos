@@ -76,11 +76,7 @@ struct header
     void* addrs[BACKTRACE_MAX];
     uint64_t num_addrs;
 
-    /* Option if current object is tracked */
-    int32_t session_number;
-
-    /* Padding to make header a multiple of 16 */
-    uint8_t padding[4];
+    uint64_t padding;
 
     /* Contains HEADER_MAGIC2 */
     uint64_t magic2;
@@ -454,6 +450,9 @@ size_t myst_debug_malloc_check(bool dump)
     list_t* list = &_list;
     size_t count = 0;
 
+    if (dump)
+        _dump(true, false);
+
     myst_spin_lock(&_spin);
     {
         for (header_t* p = list->head; p; p = p->next)
@@ -461,9 +460,6 @@ size_t myst_debug_malloc_check(bool dump)
 
         if (count)
         {
-            if (dump)
-                _dump(true, false);
-
             for (header_t* p = list->head; p; p = p->next)
                 _check_block(p);
         }

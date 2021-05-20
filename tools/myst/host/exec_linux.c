@@ -67,6 +67,7 @@ struct options
     bool export_ramfs;
     bool shell_mode;
     bool memcheck;
+    bool leakcheck;
     char rootfs[PATH_MAX];
     size_t heap_size;
     const char* app_config_path;
@@ -105,6 +106,24 @@ static void _get_options(int* argc, const char* argv[], struct options* opts)
     /* Get --memcheck option */
     if (cli_getopt(argc, argv, "--memcheck", NULL) == 0)
         opts->memcheck = true;
+
+    /* Get --leakcheck option */
+    if (cli_getopt(argc, argv, "--leakcheck", NULL) == 0)
+        opts->leakcheck = true;
+
+    /* Get MYST_MEMCHECK environment variable */
+    {
+        const char* env;
+        if ((env = getenv("MYST_MEMCHECK")) && strcmp(env, "1") == 0)
+            opts->memcheck = true;
+    }
+
+    /* Get MYST_LEAKCHECK environment variable */
+    {
+        const char* env;
+        if ((env = getenv("MYST_LEAKCHECK")) && strcmp(env, "1") == 0)
+            opts->leakcheck = true;
+    }
 
     /* Get --export-ramfs option */
     if (cli_getopt(argc, argv, "--export-ramfs", NULL) == 0)
@@ -303,6 +322,7 @@ static int _enter_kernel(
     args.shell_mode = options->shell_mode;
 
     args.memcheck = options->memcheck;
+    args.leakcheck = options->leakcheck;
 
     /* Resolve the the kernel entry point */
     const elf_ehdr_t* ehdr = args.kernel_data;

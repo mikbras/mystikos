@@ -23,6 +23,7 @@ typedef struct myst_options
     bool export_ramfs;
     bool shell_mode;
     bool memcheck;
+    bool leakcheck;
     char rootfs[PATH_MAX];
 
     myst_host_enc_id_mapping host_enc_id_mapping;
