@@ -12,6 +12,7 @@
 #include <myst/defs.h>
 #include <myst/malloc.h>
 #include <myst/panic.h>
+#include <myst/printf.h>
 #include <myst/spinlock.h>
 
 #define BACKTRACE_MAX 16
@@ -260,7 +261,7 @@ MYST_INLINE bool _check_multiply_overflow(size_t x, size_t y)
 
 static void _malloc_dump(size_t size, void* addrs[], int num_addrs)
 {
-    printf("%lu bytes\n", size);
+    myst_eprintf("%lu bytes\n", size);
     myst_dump_backtrace(addrs, num_addrs);
 }
 
@@ -282,14 +283,15 @@ static void _dump(bool dump_blocks, bool need_lock)
             bytes += p->size;
         }
 
-        printf("=== blocks in use: %zu bytes in %zu blocks\n", bytes, blocks);
+        myst_eprintf(
+            "=== blocks in use: %zu bytes in %zu blocks\n", bytes, blocks);
 
         if (dump_blocks)
         {
             for (header_t* p = list->head; p; p = p->next)
                 _malloc_dump(p->size, p->addrs, (int)p->num_addrs);
 
-            printf("\n");
+            myst_eprintf("\n");
         }
     }
 
