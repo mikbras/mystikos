@@ -23,6 +23,8 @@ enum
     SYS_myst_run_itimer,
     SYS_myst_start_shell,
     SYS_myst_gcov,
+    SYS_myst_valid_addr,
+    SYS_myst_crt_memcheck, /* handled by CRT, not kernel */
 };
 
 #endif /* _MYST_SYSCALLEXT_H */

@@ -38,9 +38,12 @@ LIBCC = -lgcc
 
 OBJECTS = $(addprefix $(SUBOBJDIR)/,$(SOURCES:.c=.o))
 
+OBJCOPY = objcopy --redefine-syms=redefine.syms
+
 $(TARGET): $(MUSL_OBJECTS) $(OBJECTS)
 	mkdir -p $(LIBDIR)
-	$(CC) -o $@ $(LDFLAGS1) $(OBJECTS) $(MUSL_OBJECTS) $(LIBCC) $(LDFLAGS2)
+	$(foreach i, $(MUSL_OBJECTS), $(OBJCOPY) $(i) $(NL) )
+	$(CC) -o $@ $(LDFLAGS1) $(LIBS) $(OBJECTS) $(MUSL_OBJECTS) $(LIBCC) $(LDFLAGS2)
 
 $(SUBOBJDIR)/%.o: %.c
 	mkdir -p $(SUBOBJDIR)

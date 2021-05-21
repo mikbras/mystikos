@@ -3665,6 +3665,20 @@ static long _syscall(void* args_)
 
             BREAK(_return(n, ret));
         }
+        case SYS_myst_valid_addr:
+        {
+            const uint8_t* addr = (const void*)x1;
+            const uint8_t* start = __myst_kernel_args.mman_data;
+            const uint8_t* end = start + __myst_kernel_args.mman_size;
+            long ret;
+
+            if (addr >= start && addr <= end)
+                ret = 0;
+            else
+                ret = EFAULT;
+
+            BREAK(_return(n, ret));
+        }
         case SYS_fork:
             break;
         case SYS_vfork:

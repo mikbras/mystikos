@@ -63,3 +63,11 @@ tests: all
 
 clean:
 	rm -rf $(APPDIR) $(ROOTFS)
+
+rebuild:
+	rm -f $(APPDIR)/target rootfs
+	$(MAKE) -C $(APPDIR) clean
+	$(MAKE)
+
+t:
+	make one TEST=/src/functional/memstream.exe

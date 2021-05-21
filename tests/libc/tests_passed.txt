@@ -12,7 +12,6 @@
 /src/functional/iconv_open.exe
 /src/functional/inet_pton.exe
 /src/functional/mbc.exe
-/src/functional/memstream.exe
 /src/functional/pthread_cond.exe
 /src/functional/pthread_tsd.exe
 /src/functional/qsort.exe
@@ -275,7 +274,6 @@
 /src/regression/pthread_exit-cancel.exe
 /src/regression/pthread_once-deadlock.exe
 /src/regression/pthread_rwlock-ebusy.exe
-/src/regression/putenv-doublefree.exe
 /src/regression/regex-backref-0.exe
 /src/regression/regex-bracket-icase.exe
 /src/regression/regexec-nosub.exe

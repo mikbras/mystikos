@@ -45,6 +45,13 @@ long myst_syscall(long n, long params[6])
     if (n == SYS_setitimer)
         pthread_once(&_once, _create_itimer_thread);
 
+    if (n == SYS_myst_crt_memcheck)
+    {
+        extern void memcheck(void);
+        memcheck();
+        return 0;
+    }
+
     return (*_syscall_callback)(n, params);
 }
 
