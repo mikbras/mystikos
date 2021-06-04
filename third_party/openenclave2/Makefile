@@ -1,0 +1,28 @@
+TOP = $(abspath $(CURDIR)/../..)
+include $(TOP)/defs.mak
+
+IMG = openenclave-build
+
+all: .openenclave
+	mkdir -p $(BUILDDIR)
+	rm -rf $(BUILDDIR)/openenclave
+	cp -r openenclave $(BUILDDIR)/openenclave
+
+.openenclave: .build
+	$(eval INAME := $(shell docker run -d $(IMG)))
+	rm -rf openenclave
+	docker cp $(INAME):/work/install ./openenclave
+	docker stop $(INAME) > /dev/null
+	touch .openenclave
+
+.build:
+	docker build -t $(IMG) . -f Dockerfile
+	touch .build
+
+prune:
+	docker system prune -a
+
+clean:
+	rm -rf .openenclave .build openenclave
+
+distclean: clean
