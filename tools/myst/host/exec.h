@@ -12,6 +12,8 @@ int exec_launch_enclave(
     const char* enc_path,
     oe_enclave_type_t type,
     uint32_t flags,
+    const oe_enclave_setting_t* settings,
+    uint32_t setting_count,
     const char* argv[],
     const char* envp[],
     struct myst_options* options);

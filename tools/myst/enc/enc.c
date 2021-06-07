@@ -23,6 +23,7 @@
 #include <myst/ramfs.h>
 #include <myst/regions.h>
 #include <myst/reloc.h>
+#include <myst/sha256.h>
 #include <myst/shm.h>
 #include <myst/strings.h>
 #include <myst/syscall.h>
@@ -321,6 +322,61 @@ done:
     return ret;
 }
 
+static int _get_sgx_config_id(uint8_t out_config_id[64])
+{
+    oe_result_t res = OE_OK;
+    uint8_t* evidence_buffer = NULL;
+    const uint8_t* config_id = NULL;
+    size_t evidence_buffer_size;
+    oe_report_t report;
+    const sgx_report_body_t* sgx_report_body = NULL;
+    /*
+     * Current test cases are written for non ice-lake platform.
+     * Additional code need to be added here to verify the
+     * config id/ svn properties on ice lake platforms
+     */
+    // Generate evidence based on the format selected by the attester.
+    res = oe_get_report_v2(
+        0, NULL, 0, NULL, 0, &evidence_buffer, &evidence_buffer_size);
+    if (res != OE_OK)
+    {
+        fprintf(stderr, "oe_get_report_v2 failed.(%s)", oe_result_str(res));
+        return (int)res;
+    }
+
+    res = oe_parse_report(evidence_buffer, evidence_buffer_size, &report);
+    if (res != OE_OK)
+    {
+        fprintf(stderr, "oe_parse_report failed.(%s)", oe_result_str(res));
+        return (int)res;
+    }
+
+    // oe_host_printf("report.type=0x%x\n", report.type);
+    // oe_host_printf(
+    //     "report.identity.attributes=0x%lx\n", report.identity.attributes);
+    // oe_host_printf(
+    //     "report.enclave_report_size=%zu\n", report.enclave_report_size);
+    oe_assert(sizeof(sgx_report_body_t) == report.enclave_report_size);
+
+    sgx_report_body = (sgx_report_body_t*)report.enclave_report;
+    // oe_host_printf(
+    //     "sgx_report_body->attributes.flags=0x%lx\n",
+    //     sgx_report_body->attributes.flags);
+    config_id = sgx_report_body->configid;
+    // I am expecting to see {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    // 15, ...}
+    // for (int i = 0; i < 64; i++) {
+    //     oe_host_printf("config_id[%d]=%x\n", i, config_id[i]);
+    // }
+
+    memcpy(out_config_id, config_id, 64);
+
+    if (evidence_buffer)
+        oe_free_report(evidence_buffer);
+
+    return (int)res;
+}
+
 struct enter_arg
 {
     struct myst_options* options;
@@ -354,6 +410,7 @@ static long _enter(void* arg_)
     const char* rootfs = NULL;
     config_parsed_data_t parsed_config;
     bool have_config = false;
+    myst_sha256_t config_sha256;
     myst_args_t args;
     myst_args_t env;
     const char* cwd = "/";       // default to root dir
@@ -394,6 +451,17 @@ static long _enter(void* arg_)
                 assert(0);
             }
             have_config = true;
+            // oe_host_printf("enclave config=%s size=%ld\n", (char *)r.data,
+            // strlen((char *)r.data));
+            myst_sha256(&config_sha256, r.data, strlen((char*)r.data));
+            // oe_host_printf("sha256 enclave config\n");
+            // uint8_t *tmp = config_sha256.data;
+            // for (int i = 0; i < 32; i++) {
+            //     oe_host_printf("%3x", tmp[i]);
+            //     if ((i + 1) % 8 == 0) {
+            //         oe_host_printf("\n");
+            //     }
+            // }
         }
     }
 
@@ -566,6 +634,19 @@ static long _enter(void* arg_)
 
         _kargs.shell_mode = shell_mode;
         _kargs.memcheck = memcheck;
+        _get_sgx_config_id(_kargs.config_id);
+        if (have_config)
+        {
+            // for (int i = 0; i < 32; i++) {
+            //     oe_host_printf("%x, %x\n", _kargs.config_id[32 + i],
+            //     config_sha256.data[i]);
+            // }
+            if (memcmp(_kargs.config_id + 32, config_sha256.data, 32) != 0)
+            {
+                fprintf(stderr, "config sha256 doesn't match config_id\n");
+                assert(0);
+            }
+        }
 
         /* set ehdr and verify that the kernel is an ELF image */
         {
@@ -871,9 +952,11 @@ int myst_tcall_get_cpuinfo(char* buf, size_t size)
     return retval;
 }
 
-OE_SET_ENCLAVE_SGX(
+OE_SET_ENCLAVE_SGX_KSS(
     ENCLAVE_PRODUCT_ID,
     ENCLAVE_SECURITY_VERSION,
+    0,
+    0,
     ENCLAVE_DEBUG,
     ENCLAVE_HEAP_SIZE / OE_PAGE_SIZE,
     ENCLAVE_STACK_SIZE / OE_PAGE_SIZE,

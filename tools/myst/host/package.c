@@ -813,7 +813,7 @@ int _exec_package(
     }
 
     ret = exec_launch_enclave(
-        scratch_path, type, flags, exec_args, envp, &options);
+        scratch_path, type, flags, NULL, 0, exec_args, envp, &options);
     if (ret != 0)
     {
         fprintf(stderr, "Enclave %s returned %d\n", scratch_path, ret);

@@ -132,6 +132,8 @@ int exec_launch_enclave(
     const char* enc_path,
     oe_enclave_type_t type,
     uint32_t flags,
+    const oe_enclave_setting_t* settings,
+    uint32_t setting_count,
     const char* argv[],
     const char* envp[],
     struct myst_options* options)
@@ -144,7 +146,8 @@ int exec_launch_enclave(
     pid_t target_tid = (pid_t)syscall(SYS_gettid);
 
     /* Load the enclave: calls oe_load_extra_enclave_data_hook() */
-    r = oe_create_myst_enclave(enc_path, type, flags, NULL, 0, &_enclave);
+    r = oe_create_myst_enclave(
+        enc_path, type, flags, settings, setting_count, &_enclave);
 
     if (r != OE_OK)
         _err("failed to load enclave: result=%s", oe_result_str(r));
@@ -403,8 +406,75 @@ int exec_action(int argc, const char* argv[], const char* envp[])
 
     unlink(archive_path);
 
+    oe_sgx_enclave_setting_config_data config_data_setting_optional = {
+        {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+        2,
+        true /* ignore_if_unsupported */};
+    {
+        void* buffer;
+        size_t buffer_size;
+        if (myst_load_file(roothashes[0], (void**)&buffer, &buffer_size) == 0)
+        {
+            myst_sha256_t sha256;
+            myst_sha256(&sha256, buffer, buffer_size);
+            uint8_t* tmp = (uint8_t*)buffer;
+            for (int i = 0; i < 32; i++)
+            {
+                char tmp_buf[3];
+                tmp_buf[2] = 0;
+                for (int j = 0; j < 2; j++)
+                {
+                    tmp_buf[j] = tmp[i * 2 + j];
+                }
+                uint8_t ui1;
+                ui1 = (uint8_t)strtol(tmp_buf, NULL, 16);
+                // printf("%3x", ui1);
+                // if ((i + 1) % 8 == 0) {
+                //     printf("\n");
+                // }
+                config_data_setting_optional.config_id[i] = ui1;
+            }
+        }
+    }
+
+    if (commandline_config)
+    {
+        void* buffer;
+        size_t buffer_size;
+        if (myst_load_file(commandline_config, (void**)&buffer, &buffer_size) ==
+            0)
+        {
+            myst_sha256_t sha256;
+            myst_sha256(&sha256, buffer, buffer_size);
+            memcpy(
+                config_data_setting_optional.config_id + 32, sha256.data, 32);
+            // printf("config host=%s, size=%ld\n", (char *)buffer,
+            // buffer_size); uint8_t *tmp = (uint8_t *)sha256.data;
+            // printf("sha256: config host\n");
+            // for (int i = 0; i < 32; i++) {
+            //     printf("%3x", tmp[i]);
+            //     if ((i + 1) % 8 == 0) {
+            //         printf("\n");
+            //     }
+            // }
+        }
+    }
+    oe_enclave_setting_t optional_settings;
+    optional_settings.setting_type = OE_SGX_ENCLAVE_CONFIG_DATA,
+    optional_settings.u.config_data = &config_data_setting_optional;
+
     return_status = exec_launch_enclave(
-        details->enc.path, type, flags, argv + 3, envp, &options);
+        details->enc.path,
+        type,
+        flags,
+        &optional_settings,
+        1,
+        argv + 3,
+        envp,
+        &options);
 
     free_mount_mapping_opts(&options.mount_mapping);
 
