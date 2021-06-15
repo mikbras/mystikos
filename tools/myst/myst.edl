@@ -438,6 +438,16 @@ enclave
             [in, string] const char* path,
             [out] myst_fssig_t* fssig);
 
+        int myst_map_file_ocall(
+            [in, string] const char* path,
+            [out] void** addr,
+            [out] size_t* length);
+
+        int myst_unmap_file_ocall(
+            int fd,
+            [user_check] void* addr,
+            size_t length);
+
         /*
         **======================================================================
         **

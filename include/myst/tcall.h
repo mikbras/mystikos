@@ -57,6 +57,8 @@ typedef enum myst_tcall_number
     MYST_TCALL_GCOV,
     MYST_TCALL_CPUINFO_SIZE,
     MYST_TCALL_GET_CPUINFO,
+    MYST_TCALL_MAP_FILE,
+    MYST_TCALL_UNMAP_FILE,
 } myst_tcall_number_t;
 
 long myst_tcall(long n, long params[6]);
@@ -161,5 +163,9 @@ long myst_gcov(const char* func, long params[6]);
 int myst_tcall_cpuinfo_size(void);
 
 int myst_tcall_get_cpuinfo(char* buf, size_t size);
+
+int myst_tcall_map_file(const char* path, void** addr, size_t* length);
+
+int myst_tcall_unmap_file(int fd, void* addr, size_t length);
 
 #endif /* _MYST_TCALL_H */

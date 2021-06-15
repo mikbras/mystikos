@@ -29,7 +29,8 @@ appdir:
 bigfile: bigfile.c $(LIBS)
 	gcc -I$(INCDIR) -c bigfile.c
 	gcc -I$(INCDIR) -c -o sha256.o ../../target/shared/sha256.c
-	gcc -I$(INCDIR) -o bigfile bigfile.o sha256.o $(LIBS) $(LDFLAGS)
+	gcc -I$(INCDIR) -c -o mapfile.o ../../target/shared/mapfile.c
+	gcc -I$(INCDIR) -o bigfile bigfile.o sha256.o mapfile.o $(LIBS) $(LDFLAGS)
 
 tests:
 	./bigfile rootfs

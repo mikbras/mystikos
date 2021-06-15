@@ -13,6 +13,7 @@
 #include <myst/list.h>
 #include <myst/round.h>
 #include <myst/sha256.h>
+#include <myst/tcall.h>
 #include <myst/verity.h>
 
 #define VERITYBLKDEV_MAGIC 0x5acdeed9
@@ -24,6 +25,99 @@
 #define MAX_CACHE_BLOCKS 256
 
 MYST_STATIC_ASSERT(sizeof(myst_verity_sb_t) == MYST_BLKSIZE);
+
+/*
+**==============================================================================
+**
+** rawblkdev_t:
+**
+**==============================================================================
+*/
+
+//#define USE_MAPPED_FILE
+
+typedef struct rawblkdev
+{
+#ifdef USE_MAPPED_FILE
+    int fd;
+    void* addr;
+    size_t length;
+#else
+    int fd;
+#endif
+} rawblkdev_t;
+
+static int _rawblkdev_open(
+    rawblkdev_t* rawblkdev,
+    const char* path,
+    bool readonly)
+{
+    int ret = 0;
+
+#ifdef USE_MAPPED_FILE
+    int fd;
+    void* addr;
+    size_t length;
+
+    ECHECK((fd = myst_tcall_map_file(path, &addr, &length)));
+    rawblkdev->fd = fd;
+    rawblkdev->addr = addr;
+    rawblkdev->length = length;
+#else
+    int fd;
+    ECHECK((fd = myst_open_block_device(path, readonly)));
+    rawblkdev->fd = fd;
+#endif
+
+done:
+    return ret;
+}
+
+static ssize_t _rawblkdev_read(
+    rawblkdev_t* rawblkdev,
+    uint64_t blkno,
+    struct myst_block* blocks,
+    size_t count)
+{
+    int ret = 0;
+
+#ifdef USE_MAPPED_FILE
+    uint64_t start = blkno * MYST_BLKSIZE;
+    uint64_t end = (blkno + count) * MYST_BLKSIZE;
+
+    if (start + MYST_BLKSIZE > rawblkdev->length)
+        ERAISE(-ERANGE);
+
+    if (end > rawblkdev->length)
+        ERAISE(-ERANGE);
+
+    memcpy(blocks, (uint8_t*)rawblkdev->addr + start, count * MYST_BLKSIZE);
+
+#else
+    ECHECK((ret = myst_read_block_device(rawblkdev->fd, blkno, blocks, count)));
+#endif
+
+done:
+    return ret;
+}
+
+static int _rawblkdev_close(rawblkdev_t* rawblkdev)
+{
+#ifdef USE_MAPPED_FILE
+    return myst_tcall_unmap_file(
+        rawblkdev->fd, rawblkdev->addr, rawblkdev->length);
+#else
+    return myst_close_block_device(rawblkdev->fd);
+#endif
+}
+
+/*
+**==============================================================================
+**
+** cache_block_t:
+**
+**==============================================================================
+*/
 
 typedef struct cache_block
 {
@@ -49,6 +143,14 @@ typedef struct cache_block
     uint8_t data[];
 } cache_block_t;
 
+/*
+**==============================================================================
+**
+** blkdev_t:
+**
+**==============================================================================
+*/
+
 typedef struct blkdev
 {
     myst_blkdev_t base;
@@ -56,7 +158,7 @@ typedef struct blkdev
     size_t first_hash_blkno; /* hash offset in block numbers */
     uint8_t roothash[MAX_ROOTHASH_SIZE];
     size_t roothash_size;
-    int rawblkdev;
+    rawblkdev_t rawblkdev;
     myst_verity_sb_t sb;
     myst_buf_t hashtree;
     myst_list_t chains[MAX_CHAINS];
@@ -271,7 +373,7 @@ static bool _blkdev_valid(blkdev_t* dev)
 }
 
 static int _read_superblock(
-    int rawblkdev,
+    rawblkdev_t* rawblkdev,
     size_t first_hash_blkno,
     myst_verity_sb_t* sb)
 {
@@ -285,8 +387,7 @@ static int _read_superblock(
     if (!(locals = malloc(sizeof(struct locals))))
         ERAISE(-ENOMEM);
 
-    ECHECK(
-        myst_read_block_device(rawblkdev, first_hash_blkno, &locals->block, 1));
+    ECHECK(_rawblkdev_read(rawblkdev, first_hash_blkno, &locals->block, 1));
 
     memcpy(sb, locals->block.data, sizeof(myst_verity_sb_t));
 
@@ -313,7 +414,7 @@ static int _read_block(
     const size_t rawblkno = blkno_offset + (blkno * count);
     myst_block_t* blocks = (myst_block_t*)block;
 
-    ECHECK(myst_read_block_device(dev->rawblkdev, rawblkno, blocks, count));
+    ECHECK(_rawblkdev_read(&dev->rawblkdev, rawblkno, blocks, count));
 
 done:
     return ret;
@@ -583,6 +684,8 @@ static int _close(myst_blkdev_t* dev_)
     if (!_blkdev_valid(dev))
         ERAISE(-EINVAL);
 
+    _rawblkdev_close(&dev->rawblkdev);
+
     myst_buf_release(&dev->hashtree);
     _release_cache(dev);
     free(dev);
@@ -629,7 +732,7 @@ int myst_verityblkdev_open(
     int ret = 0;
     blkdev_t* dev = NULL;
     size_t first_hash_blkno = hash_offset / MYST_BLKSIZE;
-    int rawblkdev = -1;
+    rawblkdev_t rawblkdev = {-1};
     struct locals
     {
         myst_verity_sb_t sb;
@@ -649,11 +752,11 @@ int myst_verityblkdev_open(
     if (roothash_size > MAX_ROOTHASH_SIZE)
         ERAISE(-EINVAL);
 
-    ECHECK((rawblkdev = myst_open_block_device(path, true)));
+    ECHECK(_rawblkdev_open(&rawblkdev, path, true));
 
     /* read the super block */
     {
-        ECHECK(_read_superblock(rawblkdev, first_hash_blkno, &locals->sb));
+        ECHECK(_read_superblock(&rawblkdev, first_hash_blkno, &locals->sb));
 
         /* only "normal" mode is supported (no Chrome OS) */
         if (locals->sb.hash_type != 1)
@@ -688,7 +791,7 @@ int myst_verityblkdev_open(
     dev->first_hash_blkno = first_hash_blkno;
     dev->rawblkdev = rawblkdev;
     dev->max_cache_blocks = MAX_CACHE_BLOCKS;
-    rawblkdev = -1;
+    rawblkdev.fd = -1;
     memcpy(&dev->sb, &locals->sb, sizeof(myst_verity_sb_t));
 
     /* convert the roothash to binary */
@@ -713,8 +816,8 @@ done:
     if (dev)
         free(dev);
 
-    if (rawblkdev >= 0)
-        myst_close_block_device(rawblkdev);
+    if (rawblkdev.fd >= 0)
+        _rawblkdev_close(&rawblkdev);
 
     return ret;
 }

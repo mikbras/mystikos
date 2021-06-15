@@ -593,6 +593,15 @@ long myst_tcall(long n, long params[6])
         {
             return myst_tcall_get_cpuinfo((void*)x1, (size_t)x2);
         }
+        case MYST_TCALL_MAP_FILE:
+        {
+            return myst_tcall_map_file(
+                (const char*)x1, (void**)x2, (size_t*)x3);
+        }
+        case MYST_TCALL_UNMAP_FILE:
+        {
+            return myst_tcall_unmap_file((int)x1, (void*)x2, (size_t)x3);
+        }
         case SYS_read:
         case SYS_write:
         case SYS_close:

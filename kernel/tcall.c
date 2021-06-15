@@ -262,3 +262,15 @@ int myst_tcall_get_cpuinfo(char* data, size_t size)
     long params[6] = {(long)data, (long)size};
     return myst_tcall(MYST_TCALL_GET_CPUINFO, params);
 }
+
+int myst_tcall_map_file(const char* path, void** addr, size_t* length)
+{
+    long params[6] = {(long)path, (long)addr, (long)length};
+    return myst_tcall(MYST_TCALL_MAP_FILE, params);
+}
+
+int myst_tcall_unmap_file(int fd, void* addr, size_t length)
+{
+    long params[6] = {(long)fd, (long)addr, (long)length};
+    return myst_tcall(MYST_TCALL_UNMAP_FILE, params);
+}

@@ -876,6 +876,26 @@ int myst_tcall_get_cpuinfo(char* buf, size_t size)
     return retval;
 }
 
+int myst_tcall_map_file(const char* path, void** addr, size_t* length)
+{
+    int retval;
+
+    if (myst_map_file_ocall(&retval, path, addr, length) != OE_OK)
+        return -EINVAL;
+
+    return retval;
+}
+
+int myst_tcall_unmap_file(int fd, void* addr, size_t length)
+{
+    int retval;
+
+    if (myst_unmap_file_ocall(&retval, fd, addr, length) != OE_OK)
+        return -EINVAL;
+
+    return retval;
+}
+
 int __vfprintf_chk(FILE* stream, int flag, const char* format, va_list ap)
 {
     (void)flag;

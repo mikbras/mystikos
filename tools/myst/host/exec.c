@@ -12,6 +12,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/user.h>
@@ -478,4 +479,14 @@ int myst_load_fssig_ocall(const char* path, myst_fssig_t* fssig)
 int myst_mprotect_ocall(void* addr, size_t len, int prot)
 {
     return mprotect(addr, len, prot);
+}
+
+int myst_map_file_ocall(const char* path, void** addr, size_t* length)
+{
+    return myst_tcall_map_file(path, addr, length);
+}
+
+int myst_unmap_file_ocall(int fd, void* addr, size_t length)
+{
+    return myst_tcall_unmap_file(fd, addr, length);
 }

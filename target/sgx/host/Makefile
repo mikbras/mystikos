@@ -7,6 +7,7 @@ ARCHIVE = libmysttargetsgxhost.a
 
 SOURCES += ../../shared/waitwake.c
 SOURCES += ../../shared/poll.c
+SOURCES += ../../shared/mapfile.c
 
 CFLAGS = $(DEFAULT_CFLAGS)
 
