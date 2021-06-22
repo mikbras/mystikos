@@ -22,9 +22,6 @@ all:
 
 DIRS += third_party
 
-ifndef MYST_PRODUCT_BUILD
-endif
-
 ifdef MYST_ENABLE_GCOV
 DIRS += gcov
 endif
@@ -47,15 +44,40 @@ DIRS += crt
 DIRS += oe
 DIRS += tools
 
-ifndef MYST_PRODUCT_BUILD
-DIRS += alpine/docker
-DIRS += tests
-endif
-
 CLEAN = $(BUILDDIR) $(TARBALL)
 
 REDEFINE_TESTS=1
 include $(TOP)/rules.mak
+
+##==============================================================================
+##
+## world:
+##
+##==============================================================================
+
+world:
+	$(MAKE) -C all
+	$(MAKE) -C build-tests
+	$(MAKE) -C build-solutions
+
+##==============================================================================
+##
+## build-tests:
+##
+##==============================================================================
+
+build-tests:
+	$(MAKE) -C alpine/docker
+	$(MAKE) -C tests
+
+##==============================================================================
+##
+## build-solutions:
+##
+##==============================================================================
+
+build-solutions:
+	$(MAKE) -C solutions
 
 ##==============================================================================
 ##
@@ -156,7 +178,7 @@ attn:
 summary:
 	@ SUMMARY=1 $(RUNTEST_COMMAND) /bin/true
 
-tests:
+tests: build-tests
 	@ $(MAKE) -C tests tests RUNTEST=$(RUNTEST_COMMAND)
 	@ $(MAKE) -s summary
 

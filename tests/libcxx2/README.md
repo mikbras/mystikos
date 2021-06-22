@@ -2,6 +2,12 @@
 
 This suite contains Libcxx tests from llvm-project that are built and run in ubuntu.
 
+## building tests
+
+```bash
+make build-tests
+```
+
 ## running tests
 
 ```bash
