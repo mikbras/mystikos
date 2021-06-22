@@ -56,9 +56,9 @@ include $(TOP)/rules.mak
 ##==============================================================================
 
 world:
-	$(MAKE) -C all
-	$(MAKE) -C build-tests
-	$(MAKE) -C build-solutions
+	$(MAKE) all
+	$(MAKE) build-tests
+	$(MAKE) build-solutions
 
 ##==============================================================================
 ##
