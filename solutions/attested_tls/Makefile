@@ -13,7 +13,8 @@ PATH := $(PATH):$(BUILDDIR)/openenclave/bin
 export PKG_CONFIG_PATH := $(BUILDDIR)/openenclave/share/pkgconfig
 export AZDCAP_DEBUG_LOG_LEVEL := 0
 
-all: myst app
+all: myst
+	$(MAKE) .app
 	$(MYST) mkcpio $(APPDIR) rootfs
 
 #OPTS = --strace
@@ -32,7 +33,7 @@ run: appdir
 myst:
 	$(MAKE) -C $(TOP)/tools/myst
 
-app:	app/peer_tee_identity.h
+.app: app/peer_tee_identity.h
 	rm -rf app/client app/tee.h
 	docker build -t alpine.build -f app-dockerfile .
 	cp $(TOP)/include/myst/tee.h app
@@ -43,13 +44,14 @@ app:	app/peer_tee_identity.h
 	cp app/client $(APPDIR)/
 	# make sure the app we are running is the one we just built.
 	ls -l $(APPDIR)/client; date
+	touch .app
 
-oe_enclave:
+.oe_enclave:
 	make -C oe_enclave/enc
 	make -C oe_enclave/host
+	touch .oe_enclave
 
-app/peer_tee_identity.h: oe_enclave
-	# Generate peer identity file for the other enclave
+app/peer_tee_identity.h: .oe_enclave # Generate peer identity file for the other enclave
 	echo "#ifndef _PEER_TEE_IDENTITY_H" > app/peer_tee_identity.h
 	echo "#define _PEER_TEE_IDENTITY_H\n" >> app/peer_tee_identity.h
 	echo "#define PEER_PRODUCT_ID $(shell $(OEDUMP) | grep product_id= | cut -d= -f2)" >> app/peer_tee_identity.h
@@ -66,4 +68,4 @@ clean:
 	rm -rf rootfs appdir
 	make clean -C oe_enclave/enc
 	make clean -C oe_enclave/host
-	rm -rf app/client app/tee.h app/peer_tee_identity.h
+	rm -rf app/client app/tee.h app/peer_tee_identity.h .app .oe_enclave

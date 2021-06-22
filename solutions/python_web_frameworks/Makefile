@@ -8,9 +8,9 @@ ifdef STRACE
 OPTS = --strace
 endif
 
-all: rootfs
+all: $(ROOTFS)
 
-rootfs: appdir
+$(ROOTFS): appdir
 	$(MYST) mkcpio appdir $(ROOTFS)
 
 appdir:
