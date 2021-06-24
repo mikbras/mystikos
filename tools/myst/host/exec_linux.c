@@ -393,7 +393,8 @@ int exec_linux_action(int argc, const char* argv[], const char* envp[])
     }
 
     /* if not a CPIO archive, create a zero-filled file with one page */
-    if (myst_cpio_test(rootfs_arg) == -ENOTSUP)
+    if (myst_cpio_test(rootfs_arg) == -ENOTSUP &&
+        myst_compress_test(rootfs_arg) == -ENOTSUP)
     {
         int fd;
         uint8_t page[PAGE_SIZE];

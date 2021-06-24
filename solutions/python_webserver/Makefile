@@ -7,7 +7,7 @@ ifdef STRACE
 OPTS = --strace
 endif
 
-OPTS = --memory-size=1024m
+OPTS = --memory-size=2g
 
 all: rootfs
 
@@ -17,11 +17,11 @@ rootfs: appdir
 appdir:
 	$(APPBUILDER) Dockerfile
 
-TIMEOUT=60s
+TIMEOUT=300
 
 run:
 	test -f server.pid && kill -9 `cat server.pid` || true
-	$(MYST_EXEC) $(OPTS) rootfs /miniconda/bin/python3 /app/hello_server.py > server.output & echo $$! > server.pid
+	$(MYST_EXEC) $(OPTS) rootfs.gz /miniconda/bin/python3 /app/hello_server.py > server.output & echo $$! > server.pid
 	timeout $(TIMEOUT) tail -f server.output | ./client.sh
 	test -f server.pid && kill -9 `cat server.pid` && rm server.pid || true
 	test -f client.output

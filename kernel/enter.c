@@ -41,6 +41,7 @@
 #include <myst/trace.h>
 #include <myst/ttydev.h>
 #include <myst/uid_gid.h>
+#include <zlib.h>
 
 static myst_fs_t* _fs;
 
@@ -517,6 +518,117 @@ done:
     return ret;
 }
 
+__attribute__((__unused__)) static int _inflate(
+    const void* src,
+    int srcLen,
+    void* dst,
+    int dstLen)
+{
+    z_stream strm = {0};
+    strm.total_in = strm.avail_in = srcLen;
+    strm.total_out = strm.avail_out = dstLen;
+    strm.next_in = (Bytef*)src;
+    strm.next_out = (Bytef*)dst;
+
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+
+    int err = -1;
+    int ret = -1;
+
+    err = inflateInit2(
+        &strm, (15 + 32)); // 15 window bits, and the +32 tells zlib to to
+                           // detect if using gzip or zlib
+    if (err == Z_OK)
+    {
+        err = inflate(&strm, Z_FINISH);
+        if (err == Z_STREAM_END)
+        {
+            ret = strm.total_out;
+        }
+        else
+        {
+            inflateEnd(&strm);
+            return err;
+        }
+    }
+    else
+    {
+        inflateEnd(&strm);
+        return err;
+    }
+
+    inflateEnd(&strm);
+    return ret;
+}
+
+static int _decompress_rootfs(myst_kernel_args_t* args)
+{
+    int ret = 0;
+    const char magic[] = {0x1f, 0x8b};
+
+    /* skip if rootfs is not in compressed format */
+    if (memcmp(args->rootfs_data, magic, sizeof(magic)) != 0)
+        goto done;
+
+    /* decompress the data */
+    {
+#if 0
+        typedef struct footer
+        {
+            uint32_t crc;
+            uint32_t size;
+        }
+        footer_t;
+        footer_t footer;
+
+        memcpy(&footer, (data + size) - sizeof(footer_t), sizeof(footer_t));
+
+        void* udata;
+        size_t usize = (size_t)footer.size;
+#endif
+        const uint8_t* data = args->rootfs_data;
+        size_t size = args->rootfs_size;
+        void* udata;
+        size_t usize = 1024 * 1024 * 1024;
+        ssize_t r;
+
+        printf("DECOMPRESS!\n");
+
+        if (!(udata = malloc(usize)))
+        {
+            myst_eprintf("kernel: out of memory\n");
+            ERAISE(-EINVAL);
+        }
+
+        myst_eprintf("usize=%zu\n", usize);
+        if ((r = _inflate(data, size, udata, usize)) < 0)
+        {
+            myst_eprintf("kernel: decompress failed\n");
+            ERAISE(-EINVAL);
+        }
+
+#if 0
+        if ((size_t)r != usize)
+        {
+            myst_eprintf("kernel: decompress size mismatch\n");
+            ERAISE(-EINVAL);
+        }
+#endif
+        usize = r;
+
+        myst_eprintf("r=%ld\n", r);
+
+        args->rootfs_data = udata;
+        args->rootfs_size = usize;
+        myst_eprintf("DONE DECOMPRESS\n");
+    }
+
+done:
+    return ret;
+}
+
 static int _get_fstype(myst_kernel_args_t* args, myst_fstype_t* fstype)
 {
     int ret = 0;
@@ -571,6 +683,7 @@ static int _mount_rootfs(myst_kernel_args_t* args, myst_fstype_t fstype)
     {
         case MYST_FSTYPE_RAMFS:
         {
+            myst_eprintf("XXXXXXXXXXXXXXXXXXXX\n");
             /* Setup the RAM file system */
             if (_setup_ramfs() != 0)
             {
@@ -584,6 +697,7 @@ static int _mount_rootfs(myst_kernel_args_t* args, myst_fstype_t fstype)
 #if defined(MYST_ENABLE_EXT2FS)
         case MYST_FSTYPE_EXT2FS:
         {
+            myst_eprintf("EEEEEEEEEEEEEEEEEEEE\n");
             /* setup and mount the EXT2 file system */
             if (_setup_ext2(args->rootfs, locals->err, sizeof(locals->err)) !=
                 0)
@@ -601,6 +715,7 @@ static int _mount_rootfs(myst_kernel_args_t* args, myst_fstype_t fstype)
 #if defined(MYST_ENABLE_HOSTFS)
         case MYST_FSTYPE_HOSTFS:
         {
+            myst_eprintf("HHHHHHHHHHHHHHHHHHHH\n");
             /* setup and mount the HOSTFS file system */
             if (_setup_hostfs(args->rootfs, locals->err, sizeof(locals->err)) !=
                 0)
@@ -734,6 +849,9 @@ int myst_enter_kernel(myst_kernel_args_t* args)
     __myst_main_thread = thread;
 
     myst_copy_host_uid_gid_mappings(&args->host_enc_uid_gid_mappings);
+
+    /* decompress the rootfs if compressed */
+    _decompress_rootfs(args);
 
     /* determine the rootfs file system type (RAMFS, EXT2FS, OR HOSTFS) */
     if ((tmp_ret = _get_fstype(args, &fstype)) != 0)

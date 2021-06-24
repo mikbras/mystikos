@@ -3,10 +3,12 @@
 
 #define _XOPEN_SOURCE 500
 #include <errno.h>
+#include <fcntl.h>
 #include <ftw.h>
 #include <libgen.h>
 #include <limits.h>
 #include <malloc.h>
+#include <myst/eraise.h>
 #include <myst/getopt.h>
 #include <myst/strings.h>
 #include <stdarg.h>
@@ -348,4 +350,42 @@ void free_mount_mapping_opts(myst_mount_mapping_t* mappings)
         }
         free(mappings->mounts);
     }
+}
+
+/* return 0 if this is a compressed file; else return -ENOTSUP */
+int myst_compress_test(const char* path)
+{
+    int ret = 0;
+    int fd = -1;
+    const char magic[] = {0x1f, 0x8b};
+    char buf[sizeof(magic)];
+    struct stat file_stat;
+
+    if (!path)
+        ERAISE(-EINVAL);
+
+    ret = stat(path, &file_stat);
+    if (ret != 0)
+        ERAISE(-ENOENT);
+
+    if ((fd = open(path, O_RDONLY)) < 0)
+    {
+        if (errno == EISDIR)
+            ERAISE(-ENOTSUP);
+        else
+            ERAISE(-ENOENT);
+    }
+
+    if (read(fd, buf, sizeof(buf)) != sizeof(magic))
+        ERAISE(-ENOTSUP);
+
+    if (memcmp(buf, magic, sizeof(magic)) != 0)
+        ERAISE(-ENOTSUP);
+
+done:
+
+    if (fd >= 0)
+        close(fd);
+
+    return ret;
 }

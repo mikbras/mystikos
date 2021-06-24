@@ -387,7 +387,8 @@ int exec_action(int argc, const char* argv[], const char* envp[])
     }
 
     /* if not a CPIO archive, create a zero-filled file with one page */
-    if (myst_cpio_test(rootfs) == -ENOTSUP)
+    if (myst_cpio_test(rootfs) == -ENOTSUP &&
+        myst_compress_test(rootfs) == -ENOTSUP)
     {
         int fd;
         uint8_t page[PAGE_SIZE];

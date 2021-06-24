@@ -8,7 +8,7 @@ PROGRAM = libmystkernel.so
 
 SOURCES = $(wildcard *.[cs])
 
-INCLUDES = -I$(INCDIR) -I$(BUILDDIR)/musl/include
+INCLUDES = -I$(INCDIR) -I$(BUILDDIR)/musl/include -I$(BUILDDIR)/zlib/include
 
 # include <myst/deprecations.h> first in every source.
 INCLUDES += -include $(INCDIR)/myst/deprecations.h
@@ -100,6 +100,8 @@ ifdef MYST_ENABLE_GCOV
 LIBS += $(LIBDIR)/libmystgcov.a
 LIBS += $(LIBDIR)/libmystgcovclient.a
 endif
+
+LIBS += $(BUILDDIR)/zlib/lib/libz.a
 
 include $(TOP)/rules.mak
 

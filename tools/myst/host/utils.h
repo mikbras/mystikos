@@ -54,6 +54,8 @@ long myst_add_symbol_file_by_path(
     const void* text_data,
     size_t text_size);
 
+int myst_compress_test(const char* path);
+
 extern void* __image_data;
 extern size_t __image_size;
 
