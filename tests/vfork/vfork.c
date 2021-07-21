@@ -18,6 +18,9 @@ static bool _reached_child;
 
 void test(bool exec)
 {
+    _reached_parent = false;
+    _reached_child = false;
+
     pid_t pid = vfork();
 
     if (pid < 0)
@@ -66,9 +69,6 @@ int main(int argc, const char* argv[])
     arg0 = argv[0];
 
     test(true);
-
-    _reached_parent = false;
-    _reached_child = false;
     test(false);
 
     printf("=== passed test (%s)\n", argv[0]);
