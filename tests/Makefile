@@ -4,6 +4,7 @@ include $(TOP)/defs.mak
 DIRS =
 
 DIRS += fork
+DIRS += vfork
 DIRS += myst
 DIRS += itimer
 DIRS += timeval
