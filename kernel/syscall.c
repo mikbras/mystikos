@@ -453,6 +453,7 @@ static pair_t _pairs[] = {
     {SYS_myst_get_fork_info, "SYS_myst_get_fork_info"},
     {SYS_fork_wait_exec_exit, "SYS_fork_wait_exec_exit"},
     {SYS_myst_kill_wait_child_forks, "SYS_myst_kill_wait_child_forks"},
+    {SYS_myst_set_vfork_caller_frame, "SYS_myst_set_vfork_caller_frame"},
     /* Open Enclave extensions */
     {SYS_myst_oe_get_report_v2, "SYS_myst_oe_get_report_v2"},
     {SYS_myst_oe_free_report, "SYS_myst_oe_free_report"},
@@ -3546,6 +3547,16 @@ static long _syscall(void* args_)
 
             long ret = myst_syscall_get_process_thread_stack(stack, stack_size);
             BREAK(_return(n, ret));
+        }
+        case SYS_myst_set_vfork_caller_frame:
+        {
+            void* vfork_caller_frame_data = (void*)x1;
+            size_t vfork_caller_frame_size = (size_t)x2;
+
+            _strace(n, NULL);
+            thread->vfork_caller_frame_data = vfork_caller_frame_data;
+            thread->vfork_caller_frame_size = vfork_caller_frame_size;
+            BREAK(_return(n, 0));
         }
         case SYS_read:
         {

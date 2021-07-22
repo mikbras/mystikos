@@ -17,6 +17,7 @@
 #include <myst/file.h>
 #include <myst/fsgs.h>
 #include <myst/futex.h>
+#include <myst/hex.h>
 #include <myst/kernel.h>
 #include <myst/lfence.h>
 #include <myst/mmanutils.h>
@@ -620,37 +621,51 @@ void myst_fork_exec_futex_wake(myst_thread_t* thread)
 
     myst_thread_t* our_process_thread =
         myst_find_process_thread(myst_thread_self());
-    myst_thread_t* find_thread = our_process_thread;
+    myst_thread_t* waiter = our_process_thread;
 
     myst_spin_lock(&myst_process_list_lock);
-    while (find_thread && find_thread->pid != pid)
+    while (waiter && waiter->pid != pid)
     {
-        find_thread = find_thread->main.prev_process_thread;
+        waiter = waiter->main.prev_process_thread;
     }
-    if (find_thread == NULL)
+    if (waiter == NULL)
     {
-        find_thread = our_process_thread->main.next_process_thread;
-        while (find_thread && find_thread->pid != pid)
+        waiter = our_process_thread->main.next_process_thread;
+        while (waiter && waiter->pid != pid)
         {
-            find_thread = find_thread->main.next_process_thread;
+            waiter = waiter->main.next_process_thread;
         }
     }
     myst_spin_unlock(&myst_process_list_lock);
 
-    if (find_thread == NULL)
+    if (waiter == NULL)
         goto done;
 
-    myst_spin_lock(find_thread->thread_lock);
-    while (find_thread && find_thread->tid != tid)
+    myst_spin_lock(waiter->thread_lock);
+    while (waiter && waiter->tid != tid)
     {
-        find_thread = find_thread->group_next;
+        waiter = waiter->group_next;
     }
-    myst_spin_unlock(find_thread->thread_lock);
+    myst_spin_unlock(waiter->thread_lock);
 
-    if (find_thread)
+    // copy the stack of the function that called vfork() from the child
+    // process to the parent process.
+    if (thread->vfork_caller_frame && thread->vfork_caller_frame_size &&
+        waiter->vfork_caller_frame && waiter->vfork_caller_frame_size)
     {
-        __sync_val_compare_and_swap(&find_thread->fork_exec_futex_wait, 0, 1);
-        myst_futex_wake(&find_thread->fork_exec_futex_wait, 1);
+        void* dest = waiter->vfork_caller_frame;
+        size_t dest_size = waiter->vfork_caller_frame_size;
+        const void* src = thread->vfork_caller_frame;
+        size_t src_size = thread->vfork_caller_frame_size;
+
+        if (dest != src && dest_size == src_size)
+            memcpy(dest, src, dest_size);
+    }
+
+    if (waiter)
+    {
+        __sync_val_compare_and_swap(&waiter->fork_exec_futex_wait, 0, 1);
+        myst_futex_wake(&waiter->fork_exec_futex_wait, 1);
     }
 
 done:

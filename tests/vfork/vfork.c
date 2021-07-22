@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,10 +17,16 @@ const char* arg0;
 static bool _reached_parent;
 static bool _reached_child;
 
+#define STRING1 "\001\001\001\001\001\001\001\001"
+#define STRING2 "\002\002\002\002\002\002\002\002"
+
 void test(bool exec)
 {
     _reached_parent = false;
     _reached_child = false;
+    char buf[9];
+
+    strcpy(buf, STRING1);
 
     pid_t pid = vfork();
 
@@ -35,8 +42,12 @@ void test(bool exec)
         _reached_child = true;
         sleep(1);
 
+        strcpy(buf, STRING2);
+
         /* verify that vfork() suspended execution of the parent process */
         assert(_reached_parent == false);
+
+        assert(pid == 0);
 
         if (exec)
         {
@@ -53,9 +64,14 @@ void test(bool exec)
         printf("=== inside parent\n");
         int wstatus;
         _reached_parent = true;
+
+        /* check that the child changed the parent's stack */
+        assert(strcmp(buf, STRING2) == 0);
+
         assert(waitpid(pid, &wstatus, 0) == pid);
         assert(WIFEXITED(wstatus));
         assert(WEXITSTATUS(wstatus) == 123);
+        assert(pid != 0);
     }
 
     assert(_reached_child == true);

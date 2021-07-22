@@ -309,20 +309,20 @@ static int _child_func(void* arg)
 static pthread_key_t _called_by_vfork_key;
 static pthread_once_t _called_by_vfork_key_once = PTHREAD_ONCE_INIT;
 
-static void _called_by_fork_once(void)
+static void _init_called_by_fork(void)
 {
     pthread_key_create(&_called_by_vfork_key, NULL);
 }
 
 static uint64_t _get_called_by_vfork(void)
 {
-    pthread_once(&_called_by_vfork_key_once, _called_by_fork_once);
+    pthread_once(&_called_by_vfork_key_once, _init_called_by_fork);
     return (uint64_t)pthread_getspecific(_called_by_vfork_key);
 }
 
 static void _set_called_by_vfork(uint64_t value)
 {
-    pthread_once(&_called_by_vfork_key_once, _called_by_fork_once);
+    pthread_once(&_called_by_vfork_key_once, _init_called_by_fork);
     pthread_setspecific(_called_by_vfork_key, (void*)value);
 }
 
@@ -455,7 +455,7 @@ myst_fork(void)
 **
 ** The vfork() and fork() Mystikos implementations are equivalent except
 ** that vfork() suspends execution of the calling thread until the child
-** either calls execve or _exit. POSIX (The Open Group) specifies that
+** either calls exec or _exit. POSIX (The Open Group) specifies that
 ** vfork() and fork() are equivalent but that the behavior is undefined
 ** if the child process performs any of the following.
 **
@@ -470,39 +470,48 @@ myst_fork(void)
 ** parent-process data modifications would be visible to the child).
 **
 ** The Mystikos implementation is a compliant implementation of vfork(),
-** adhering to the definition above. However, an application that does
-** not conform to #1 will behave differently than Linux. On Linux a
-** child process may modify the stack. The changes are then visible
-** to the parent process once it resumes. On Mystikos, stack changes
-** made by the child process are not visible to the parent process.
-** But recall, that behavior of such stack modification is undefined
-** in the first place (POSIX standard).
-**
-** One might be concerned that Mytikos deviates from Linux when a
-** badly-behaved application relies on undefined behavior. But remember
-** that applications employ vfork() precisely because they wish to
-** extend coverage to platforms that do not support fork() (that is
-** non-Linux platforms). And so those applications are more likely to
-** behave correctly because they have been tested on such platforms,
-** where the undefined behavior varies. Further, The Open Group points
-** out that on some implementations, vfork() is equivalent to fork(),
-** so that any application targetting such an implementation, could not
-** rely on such undefined behavior. Finally, musl libc treats fork()
-** and vfork() equivalently on some platforms as well (see
-** musl/src/process/vfork.c).
-**
-** Nevertheless, there is some chance that an application using vfork
-** may misbehave when relying on undefined behavior (that is the
-** propagation of child-stack modifications to the parent). If this
-** is a frequent occurrence, Mystikos could support copying the
-** child stack back to the parent.
+** adhering to the definition above. It also preserves the behavior of the
+** Linux implementation where changes to data in the child are visible to the
+** parent. To achieve this, the implementation copies the child stack back to
+** the parent during exec() or _exit(). This is safe since the parent process
+** is suspended between vfork() and exec/_exit. The copy is performed just
+** before waking the parent process that is waiting on the child to exec or
+** exit.
 **
 **==============================================================================
 */
 
 int vfork(void)
 {
+    pid_t pid;
+
+    /* save the calling function's process stack frame to current thread */
+    {
+        uint8_t* p0 = __builtin_frame_address(0);
+        uint8_t* p1 = __builtin_frame_address(1);
+        const size_t n = 2 * sizeof(uint64_t); /* skip BP and return address */
+        syscall(SYS_myst_set_vfork_caller_frame, p0 + n, p1 - p0 - n);
+    }
+
     /* fork calls _get_called_by_vfork() */
     _set_called_by_vfork(1);
-    return fork();
+
+    if ((pid = fork()) < 0) /* error */
+    {
+        return pid;
+    }
+    else if (pid == 0) /* child */
+    {
+        /* save the calling function's child stack frame to current thread */
+        uint8_t* p0 = __builtin_frame_address(0);
+        uint8_t* p1 = __builtin_frame_address(1);
+        const size_t n = 2 * sizeof(uint64_t); /* skip BP and return address */
+        syscall(SYS_myst_set_vfork_caller_frame, p0 + n, p1 - p0 - n);
+
+        return pid;
+    }
+    else /* parent */
+    {
+        return pid;
+    }
 }

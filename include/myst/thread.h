@@ -260,6 +260,11 @@ struct myst_thread
     /* when fork needs to wait for child to call exec or exit, wait on this
      * fuxtex. Child set to 1 and signals futex. */
     int fork_exec_futex_wait;
+
+    // The caller frame of the function that called vfork() if any. These
+    // are set by the SYS_myst_set_vfork_caller_frame syscall.
+    void* vfork_caller_frame;
+    size_t vfork_caller_frame_size;
 };
 
 MYST_INLINE bool myst_valid_thread(const myst_thread_t* thread)
