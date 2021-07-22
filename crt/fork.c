@@ -472,11 +472,12 @@ myst_fork(void)
 ** The Mystikos implementation is a compliant implementation of vfork(),
 ** adhering to the definition above. It also preserves the behavior of the
 ** Linux implementation where changes to data in the child are visible to the
-** parent. To achieve this, the implementation copies the child stack back to
-** the parent during exec() or _exit(). This is safe since the parent process
-** is suspended between vfork() and exec/_exit. The copy is performed just
-** before waking the parent process that is waiting on the child to exec or
-** exit.
+** parent.
+**
+** The stack frame of the function that called vfork() is copied from the
+** child process to the parent process when the child calls exec or _exit.
+** This is safe because the parent process is suspended at this time, while
+** waiting on the child process to either call exec or _exit.
 **
 **==============================================================================
 */
@@ -484,6 +485,23 @@ myst_fork(void)
 int vfork(void)
 {
     pid_t pid;
+
+    // calling function's stack frame:
+    //
+    //     [base pointer  ] __builtin_frame_address(0)
+    //     [return address]
+    //     [..............] <-+
+    //     [..............]   |
+    //     [..............]   |
+    //     [..............]   |
+    //     [..............]   +--- copied from child to parent on exec/_exit
+    //     [..............]   |
+    //     [..............]   |
+    //     [..............]   |
+    //     [..............] <-+
+    //     [base pointer  ] __builtin_frame_address(1)
+    //     [return address]
+    //
 
     /* save the calling function's process stack frame to current thread */
     {
